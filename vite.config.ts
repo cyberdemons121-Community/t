@@ -13,4 +13,11 @@ export default defineConfig({
       },
     },
   },
+  // Used by `npm start` (Render web service): serve the built site on $PORT,
+  // bound to 0.0.0.0 so the platform's port scan can reach it.
+  preview: {
+    host: true,
+    port: Number(process.env.PORT) || 4173,
+    strictPort: true,
+  },
 });
