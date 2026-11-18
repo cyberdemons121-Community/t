@@ -1,4 +1,5 @@
 import { site } from "../data/site";
+import { eventPages } from "../data/events";
 import { Corners } from "./Corners";
 import { ArrowUpRightIcon } from "./Icons";
 import { buttonGhost, buttonPrimary } from "./styles";
@@ -48,13 +49,47 @@ export function Hero() {
               debrief that makes both sharper. Authorized targets only.
             </p>
 
-            <div className="mt-8 flex flex-col gap-3 motion-safe:animate-fade-up motion-safe:animate-delay-300 sm:flex-row">
-              <a href="#join" className={`${buttonPrimary} shine-hover`}>
-                Join the pack
+            <div className="mt-8 flex flex-col gap-3 motion-safe:animate-fade-up motion-safe:animate-delay-300 sm:flex-row sm:flex-wrap">
+              <a
+                href={`${eventPages.hackathon.href}#register`}
+                className={`${buttonPrimary} shine-hover`}
+              >
+                Register for Hackathon
                 <ArrowUpRightIcon className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
               </a>
-              <a href="#tracks" className={buttonGhost}>
+              <a href={`${eventPages.ctf.href}#register`} className={buttonGhost}>
+                Register for CTF
+                <ArrowUpRightIcon className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+              </a>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-[10px] uppercase tracking-[0.18em] text-fog/80 motion-safe:animate-fade-up motion-safe:animate-delay-300">
+              <a
+                href="#join"
+                className="group inline-flex items-center gap-1.5 transition-colors hover:text-white"
+              >
+                Join the pack
+                <span aria-hidden="true" className="transition-transform group-hover:translate-x-0.5">
+                  →
+                </span>
+              </a>
+              <a
+                href="#tracks"
+                className="group inline-flex items-center gap-1.5 transition-colors hover:text-ice"
+              >
                 Explore the tracks
+                <span aria-hidden="true" className="transition-transform group-hover:translate-x-0.5">
+                  →
+                </span>
+              </a>
+              <a
+                href="#flagship"
+                className="group inline-flex items-center gap-1.5 transition-colors hover:text-blood-bright"
+              >
+                Event briefing
+                <span aria-hidden="true" className="transition-transform group-hover:translate-x-0.5">
+                  →
+                </span>
               </a>
             </div>
 

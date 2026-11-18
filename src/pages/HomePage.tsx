@@ -1,5 +1,6 @@
 import { Events } from "../components/Events";
 import { Faq } from "../components/Faq";
+import { FlagshipEvents } from "../components/FlagshipEvents";
 import { Hero } from "../components/Hero";
 import { Join } from "../components/Join";
 import { Manifesto } from "../components/Manifesto";
@@ -13,6 +14,7 @@ export function HomePage() {
     <>
       <Hero />
       <Ticker />
+      <FlagshipEvents />
       <Mission />
       <Tracks />
       <Operations />
