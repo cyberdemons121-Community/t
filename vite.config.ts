@@ -19,5 +19,8 @@ export default defineConfig({
     host: true,
     port: Number(process.env.PORT) || 4173,
     strictPort: true,
+    // Vite rejects requests whose Host header it does not recognise (403);
+    // this site is served under Render's generated domain and custom domains.
+    allowedHosts: true,
   },
 });
