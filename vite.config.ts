@@ -13,8 +13,12 @@ export default defineConfig({
       },
     },
   },
-  // Used by `npm start` (Render web service): serve the built site on $PORT,
-  // bound to 0.0.0.0 so the platform's port scan can reach it.
+  // Local dev: send API calls to the Express server.
+  server: {
+    proxy: {
+      "/api": "http://localhost:3001",
+    },
+  },
   preview: {
     host: true,
     port: Number(process.env.PORT) || 4173,

@@ -6,7 +6,9 @@ import { buttonGhost, buttonPrimary } from "./styles";
 
 interface RegistrationFormProps {
   eventName: string;
+  eventId: string;
   config: RegistrationConfig;
+  entryFeeLabel: string;
 }
 
 type FormValues = Record<string, string>;
@@ -75,141 +77,12 @@ function validate(
   return errors;
 }
 
-function generateUniqueId(eventName: string) {
-  const prefix = eventName.toLowerCase().includes("hackathon") ? "CDH" : "CDC";
-  const rand = Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(2, 8);
-  const time = Date.now().toString(36).toUpperCase().slice(-4);
-  return `${prefix}-${time}${rand}`;
-}
-
-function buildMailto(
-  eventName: string,
-  config: RegistrationConfig,
-  values: FormValues,
-  files: FileValues,
-  uniqueId: string,
-): string {
-  const primary =
-    values.teamName?.trim() ||
-    values.handle?.trim() ||
-    values.captain?.trim() ||
-    values.email?.trim() ||
-    "registration";
-
-  const subject = `${config.subjectTag} ${eventName} — ${primary} — ${uniqueId}`;
-  const body = [
-    `${eventName} registration`,
-    `Unique ID (pending verification): ${uniqueId}`,
-    site.name,
-    "",
-    ...config.fields.map((field) => {
-      if (field.type === "file") {
-        const f = files[field.name];
-        return `${field.label}: ${f ? `${f.name} (${Math.round(f.size / 1024)} KB)` : "—"} [attach manually if sending by email]`;
-      }
-      const value = values[field.name]?.trim();
-      return `${field.label}: ${value || "—"}`;
-    }),
-    "",
-    `Entry fee: ${site.entryFee} ${site.entryFeeNote}`,
-    `Prize pool: ${site.prizePool}`,
-    "",
-    "Sent from the CyberDemons site. Payment verification required for confirmation and login credentials.",
-  ].join("\n");
-
-  return `mailto:${site.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-}
-
-function buildDiscordContent(
-  eventName: string,
-  config: RegistrationConfig,
-  values: FormValues,
-  files: FileValues,
-  uniqueId: string,
-): string {
-  const lines = [
-    `**${config.subjectTag} ${eventName}**`,
-    `**Unique ID (pending):** ${uniqueId}`,
-    `**Entry fee:** ${site.entryFee} ${site.entryFeeNote} | **Prize pool:** ${site.prizePool}`,
-    "",
-    ...config.fields.map((field) => {
-      if (field.type === "file") {
-        const f = files[field.name];
-        return `**${field.label}:** ${f ? `${f.name} (${Math.round(f.size / 1024)} KB)` : "—"}`;
-      }
-      const value = values[field.name]?.trim();
-      return `**${field.label}:** ${value || "—"}`;
-    }),
-  ];
-
-  return lines.join("\n").slice(0, 1900);
-}
-
-async function postDiscord(
-  webhookUrl: string,
-  body: BodyInit,
-  headers?: HeadersInit,
-): Promise<void> {
-  const res = await fetch(webhookUrl, { method: "POST", body, headers });
-  if (!res.ok) {
-    let detail = "";
-    try {
-      detail = (await res.text()).slice(0, 200);
-    } catch {
-      // ignore
-    }
-    throw new Error(`Webhook error ${res.status}${detail ? `: ${detail}` : ""}`);
-  }
-}
-
-async function sendToDiscord(
-  webhookUrl: string,
-  eventName: string,
-  config: RegistrationConfig,
-  values: FormValues,
-  files: FileValues,
-  uniqueId: string,
-): Promise<"ok" | "partial"> {
-  const content = buildDiscordContent(eventName, config, values, files, uniqueId);
-
-  // Send registration details as a JSON message first (more reliable than multipart from browsers).
-  await postDiscord(
-    webhookUrl,
-    JSON.stringify({
-      content,
-      username: "CyberDemons Registration",
-      allowed_mentions: { parse: [] },
-    }),
-    { "Content-Type": "application/json" },
-  );
-
-  // Upload files as separate messages so details are delivered even if an attachment fails.
-  const fileFields = config.fields.filter((f) => f.type === "file");
-  const uploads = fileFields
-    .map((field) => {
-      const file = files[field.name];
-      if (!file) return null;
-      const form = new FormData();
-      form.append(
-        "payload_json",
-        JSON.stringify({
-          content: `**Attachment for ${uniqueId}** — ${field.label}: ${file.name}`,
-          username: "CyberDemons Registration",
-          allowed_mentions: { parse: [] },
-        }),
-      );
-      form.append("files[0]", file, file.name);
-      return postDiscord(webhookUrl, form);
-    })
-    .filter((p): p is Promise<void> => p !== null);
-
-  if (uploads.length === 0) return "ok";
-
-  const results = await Promise.allSettled(uploads);
-  return results.every((r) => r.status === "fulfilled") ? "ok" : "partial";
-}
-
-export function RegistrationForm({ eventName, config }: RegistrationFormProps) {
+export function RegistrationForm({
+  eventName,
+  eventId,
+  config,
+  entryFeeLabel,
+}: RegistrationFormProps) {
   const rawId = useId();
   const formId = rawId.replace(/[^a-zA-Z0-9_-]/g, "");
   const [values, setValues] = useState<FormValues>(() => initialValues(config.fields));
@@ -217,12 +90,10 @@ export function RegistrationForm({ eventName, config }: RegistrationFormProps) {
   const [errors, setErrors] = useState<FormErrors>({});
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [mailto, setMailto] = useState("");
+  const [submitError, setSubmitError] = useState("");
   const [uniqueId, setUniqueId] = useState("");
-  const [webhookStatus, setWebhookStatus] = useState<"none" | "ok" | "partial" | "failed">("none");
   const confirmationRef = useRef<HTMLDivElement>(null);
 
-  const webhookUrl = config.webhookUrl ?? site.discordWebhookUrl;
   const whatsappUrl = config.whatsappUrl ?? site.whatsappUrl;
   const discordInviteUrl = config.discordInviteUrl ?? site.discordInviteUrl;
 
@@ -261,28 +132,41 @@ export function RegistrationForm({ eventName, config }: RegistrationFormProps) {
       return;
     }
 
-    const id = generateUniqueId(eventName);
-    setUniqueId(id);
-    const mail = buildMailto(eventName, config, values, files, id);
-    setMailto(mail);
-
     setSubmitting(true);
-    let status: "none" | "ok" | "partial" | "failed" = "none";
-    if (webhookUrl) {
-      try {
-        status = await sendToDiscord(webhookUrl, eventName, config, values, files, id);
-      } catch (error) {
-        console.error("Registration webhook submission failed:", error);
-        status = "failed";
+    setSubmitError("");
+
+    const body = new FormData();
+    body.append("eventName", eventName);
+    body.append("eventId", eventId);
+    Object.entries(values).forEach(([name, value]) => body.append(name, value));
+    Object.entries(files).forEach(([name, file]) => {
+      if (file) body.append(name, file, file.name);
+    });
+
+    try {
+      const response = await fetch("/api/register", { method: "POST", body });
+      const data = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        uniqueId?: string;
+        error?: string;
+      };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Registration could not be submitted.");
       }
+      setUniqueId(data.uniqueId ?? "");
+      setSent(true);
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : "Registration could not be submitted.",
+      );
+    } finally {
+      setSubmitting(false);
     }
-    setWebhookStatus(status);
-    setSubmitting(false);
-    setSent(true);
   };
 
   const edit = () => {
     setSent(false);
+    setSubmitError("");
     window.requestAnimationFrame(() => {
       document.getElementById(`${formId}-${config.fields[0]?.name ?? ""}`)?.focus();
     });
@@ -317,7 +201,7 @@ export function RegistrationForm({ eventName, config }: RegistrationFormProps) {
           <div>
             <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-ice">Payment</p>
             <p className="mt-2 text-sm leading-relaxed text-fog">
-              Entry fee: <span className="font-medium text-white">{site.entryFee} {site.entryFeeNote}</span>. Scan the QR to pay, then upload your payment screenshot below.
+              Entry fee: <span className="font-medium text-white">{entryFeeLabel}</span>. Scan the QR to pay, then upload your payment screenshot below.
             </p>
             <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fog/80">
               Prize pool: <span className="text-white">{site.prizePool}</span> (Hackathon & CTF)
@@ -339,33 +223,18 @@ export function RegistrationForm({ eventName, config }: RegistrationFormProps) {
           </span>
           <h3 className="mt-4 text-xl font-medium text-white">Thank you for registering, {primary}.</h3>
           <p className="mt-2 text-sm leading-relaxed text-fog">
-            Your registration for <span className="text-white">{eventName}</span> has been submitted
-            {webhookStatus === "ok" || webhookStatus === "partial" ? " to our team" : ""}.
-            After payment verification you will receive a <span className="text-white">confirmation mail</span> and a{" "}
-            <span className="text-white">unique ID</span> (team/individual) with login credentials.
+            Your <span className="text-white">{eventName}</span> details and uploads have been sent for
+            verification. Once approved, we’ll email your <span className="text-white">unique ID</span>{" "}
+            and <span className="text-white">password</span> for login.
           </p>
 
           <div className="mt-4 border border-white/10 bg-ink/40 p-4">
             <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-fog/80">Your unique ID (pending verification)</p>
             <p className="mt-1 font-mono text-lg font-medium tracking-[0.08em] text-ice">{uniqueId}</p>
             <p className="mt-2 text-xs leading-relaxed text-fog/80">
-              Save this ID for reference. Final confirmation and credentials will be sent after payment verification.
+              Save this ID for reference. Your login password is sent only after verification.
             </p>
           </div>
-
-          {webhookStatus === "partial" ? (
-            <p className="mt-4 text-sm leading-relaxed text-blood-bright">
-              Your details were sent, but one or more uploaded files could not be auto-attached to Discord from this browser. Please use the email option below to attach your payment screenshot/PPT if needed.
-            </p>
-          ) : webhookStatus === "failed" ? (
-            <p className="mt-4 text-sm leading-relaxed text-blood-bright">
-              We couldn’t auto-send your files/details to our verification channel from this browser (this can happen due to browser/network or webhook restrictions). Please use the email option below and attach your uploaded files manually.
-            </p>
-          ) : webhookStatus === "none" ? (
-            <p className="mt-4 text-sm leading-relaxed text-fog">
-              Verification submission channel will be finalized soon. Use the email option below to send your details (and attach your payment screenshot/PPT) if needed.
-            </p>
-          ) : null}
 
           <div className="mt-5 flex flex-wrap items-center gap-3">
             {whatsappUrl ? (
@@ -378,18 +247,13 @@ export function RegistrationForm({ eventName, config }: RegistrationFormProps) {
                 Join/see updates on Discord <span aria-hidden="true">→</span>
               </a>
             ) : null}
-            <a href={mailto} className={whatsappUrl || discordInviteUrl ? buttonGhost : buttonPrimary}>
-              Open mail app <span aria-hidden="true">→</span>
-            </a>
             <a href="/login.html" className={buttonGhost}>Login</a>
           </div>
 
           <ul className="mt-5 space-y-1 font-mono text-[10px] uppercase leading-relaxed tracking-[0.14em] text-fog/80">
-            {!whatsappUrl || !discordInviteUrl ? (
-              <li>• Some WhatsApp/Discord links may be added or updated soon.</li>
-            ) : null}
-            <li>• After payment verification: confirmation mail + unique ID + login credentials.</li>
-            <li>• Login to play the CTF or see hackathon updates (after access is activated).</li>
+            <li>• Details saved to the registration sheet.</li>
+            <li>• Verification mail sent to the team with your uploads.</li>
+            <li>• After approval: confirmation mail with unique ID + password.</li>
           </ul>
 
           <button
@@ -509,13 +373,19 @@ export function RegistrationForm({ eventName, config }: RegistrationFormProps) {
             })}
           </div>
 
+          {submitError ? (
+            <p role="alert" className="mt-5 border border-blood/40 bg-blood/5 p-3 text-sm text-blood-bright">
+              {submitError}
+            </p>
+          ) : null}
+
           <button type="submit" disabled={submitting} className={`${buttonPrimary} mt-6 w-full disabled:cursor-not-allowed disabled:opacity-60`}>
             {submitting ? "Submitting..." : config.submitLabel}
             <span aria-hidden="true">→</span>
           </button>
 
           <p className="mt-4 font-mono text-[10px] uppercase leading-relaxed tracking-[0.14em] text-fog/80">
-            <span className="text-blood-bright">*</span> Required. Submit details and uploads for verification. After payment verification you’ll receive a confirmation mail, unique ID, and login credentials.
+            <span className="text-blood-bright">*</span> Required. Submit details and uploads for verification. After approval you’ll receive a confirmation mail with your unique ID and login password.
           </p>
         </form>
       )}

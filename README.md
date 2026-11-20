@@ -24,16 +24,17 @@ The dev server prints a local URL (default `http://localhost:5173`).
 | Script              | What it does                                |
 | ------------------- | ------------------------------------------- |
 | `npm run dev`       | Start the Vite dev server                   |
+| `npm run server`    | Start the Express API on port 3001          |
 | `npm run build`     | Type-check with `tsc`, then build to `dist` |
-| `npm run preview`   | Serve the production build locally          |
+| `npm start`         | Serve built site + API (used on Render)     |
 | `npm run typecheck` | Type-check only                             |
 
 ## Pages
 
 - `/` (`index.html`) — Home: mission, tracks, operations, recurring sessions,
   flagship event cards, join form, FAQ.
-- `/hackathon.html` — CyberDemons Hackathon 2026 (submissions close
-  **26 December 2026**).
+- `/hackathon.html` — CyberDemons Hackathon 2026 (PPT submissions close
+  **23 December 2026**, event day **26 December 2026**).
 - `/ctf.html` — CyberDemons CTF 2026 (event day **27 December 2026**).
 
 Page selection is driven by `#root[data-page]` in each HTML entry and wired as
@@ -75,14 +76,17 @@ index.html
 
 ## Forms and registration
 
-- The home **Join** form (`src/components/Join.tsx`) and event registration
-  forms (`src/components/RegistrationForm.tsx`) are **client-side only** and have
-  **no backend**.
-- Submissions validate in the browser, then prepare a prefilled `mailto:` to
-  `site.email` and show a success/ready state with an explicit **“Open mail
-  app”** link. Nothing is sent automatically or stored by the site.
-- To collect registrations server-side later, replace the mailto preparation/use
-  in `Join.tsx` and `RegistrationForm.tsx` with a `fetch` to your endpoint.
+- Event registration forms (`src/components/RegistrationForm.tsx`) POST to the
+  Express API at `/api/register` (multipart, including uploads).
+- The API appends each registration to a Google Sheet, then emails a verification
+  link with the submitted details and attachments to `ADMIN_EMAIL`
+  (`cyberdemons121@gmail.com` by default).
+- Clicking **Mark verified & send credentials** in that mail calls
+  `/api/verify?token=...`, marks the row verified, generates a unique password,
+  and emails the participant their unique ID + password.
+- `POST /api/login` checks those credentials against the verified sheet row;
+  `src/pages/LoginPage.tsx` uses it for sign-in.
+- The home **Join** form (`src/components/Join.tsx`) is still mailto-only.
 
 ## Design notes
 
@@ -91,11 +95,28 @@ index.html
   disabled under `prefers-reduced-motion`.
 - All interactive elements have visible focus states and accessible labels.
 
+## Backend setup
+
+Copy `.env.example` to `.env` and fill in:
+
+- `SMTP_EMAIL`, `SMTP_APP_PASSWORD` — Gmail address and a **Gmail App Password**
+  (not the account password). Enable 2-Step Verification and generate an app
+  password for "Mail". `FROM_EMAIL` defaults to `SMTP_EMAIL`.
+- `GOOGLE_SHEET_ID` — the registration spreadsheet. Authentication uses
+  Application Default Credentials (ADC): run `gcloud auth application-default
+  login` locally with the Google account that has Editor access to the sheet,
+  and enable the Sheets API. No service-account key or `GOOGLE_PRIVATE_KEY` is
+  needed. A `Registrations` tab and header row are created automatically.
+- `APP_URL` — public URL of this service (used in verification/login links).
+- `ADMIN_EMAIL` — address that receives verification mail.
+
+Local dev: run `npm run server` and `npm run dev` in separate terminals; Vite
+proxies `/api` to port 3001.
+
 ## Deploying
 
-`npm run build` outputs a static site in `dist/` with all three HTML entries.
-Upload it to any static host (Netlify, Vercel, Cloudflare Pages, S3 + CDN,
-nginx). No SPA rewrite rules are required. Keep event page URLs as
-`/hackathon.html` and `/ctf.html` (or configure equivalent rewrites if you
-prefer extensionless paths).
+`render.yaml` defines a Render web service: `npm run build` then `npm start`,
+where `npm start` runs `server/index.js` and serves both the API and the built
+`dist/` site. Set the env vars above in the Render dashboard (or blueprint).
+Keep event page URLs as `/hackathon.html` and `/ctf.html`.
 

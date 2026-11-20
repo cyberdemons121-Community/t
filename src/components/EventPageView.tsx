@@ -35,6 +35,7 @@ const accents: Record<EventPageData["accent"], Accent> = {
 function EventHero({ event }: { event: EventPageData }) {
   const accent = accents[event.accent];
   const isRed = event.accent === "red";
+  const isHackathon = event.id === "hackathon";
   const registerLabel =
     event.id === "hackathon" ? "Register your team" : "Register for Main CTF";
 
@@ -185,14 +186,14 @@ function EventHero({ event }: { event: EventPageData }) {
                     {event.name}
                   </p>
                   <p className="mt-1 flex items-end gap-3">
-                    <span className="font-display text-[clamp(4.5rem,11vw,7.5rem)] font-semibold leading-none tracking-[-0.04em] text-white">
+                    <span className={`font-display font-semibold leading-none tracking-[-0.04em] text-fog/80 ${isHackathon ? "text-[clamp(1.1rem,2.2vw,1.6rem)]" : "text-[clamp(1.5rem,3vw,2.25rem)]"}`}>
                       {event.dateDisplay}
                     </span>
-                    <span className="pb-2 font-mono text-[11px] uppercase tracking-[0.22em] text-fog/80">
+                    <span className={`pb-2 text-[11px] uppercase tracking-[0.22em] text-fog/80 ${isHackathon ? "font-display" : "font-mono"}`}>
                       {event.month}
                     </span>
                   </p>
-                  <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-white/75">
+                  <p className={`mt-2 text-[10px] uppercase tracking-[0.18em] text-white/75 ${isHackathon ? "font-display" : "font-mono"}`}>
                     {event.deadline}
                   </p>
                 </div>
@@ -229,14 +230,14 @@ export function EventPageView({ event }: { event: EventPageData }) {
     : "One day, a finite scoreboard, and more than one way in.";
 
   const scheduleDescription = isHackathon
-    ? "Registration is open now. Submissions close 26 December 2026. Payment verification required for confirmation."
+    ? `Registration is open now. PPT submissions close 23 December 2026. Event day is 26 December 2026. Payment verification required for confirmation.`
     : "Registration is open now. Main CTF runs 27 December 2026 (solo). Access after payment verification.";
 
   const tracksKicker = isHackathon ? "Tracks" : "Categories";
-  const keyLabel = isHackathon ? "Submission deadline" : "Event day";
+  const keyLabel = isHackathon ? "PPT submission deadline" : "Event day";
   const formatText = isHackathon
-    ? "Online · Teams up to 4 · ₹200 per head"
-    : "Online · Solo · ₹200 per head";
+    ? `Online · Teams 1–4 · ${event.entryFeeLabel}`
+    : `Online · Solo · ${event.entryFeeLabel}`;
 
   const beforeSend = isHackathon
     ? [
@@ -279,7 +280,7 @@ export function EventPageView({ event }: { event: EventPageData }) {
                 </p>
                 <p className="mt-2 text-lg leading-snug text-white">{event.deadline}</p>
                 <p className="mt-2 text-sm text-fog">
-                  Entry fee: <span className="text-white">{site.entryFee} {site.entryFeeNote}</span> · Prize pool: <span className="text-white">{site.prizePool}</span>
+                  Entry fee: <span className="text-white">{event.entryFeeLabel}</span> · Prize pool: <span className="text-white">{site.prizePool}</span>
                 </p>
                 <a
                   href="#register"
@@ -457,7 +458,7 @@ export function EventPageView({ event }: { event: EventPageData }) {
 
         <div className="container-x relative grid gap-8 lg:grid-cols-[1fr_0.8fr] lg:gap-12">
           <Reveal>
-            <RegistrationForm eventName={event.name} config={event.registration} />
+            <RegistrationForm eventName={event.name} eventId={event.id} config={event.registration} entryFeeLabel={event.entryFeeLabel} />
           </Reveal>
 
           <aside className="space-y-5">
@@ -467,8 +468,14 @@ export function EventPageView({ event }: { event: EventPageData }) {
                 <dl className="mt-4 space-y-4">
                   <div>
                     <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-fog/80">{keyLabel}</dt>
-                    <dd className="mt-1 text-lg text-white">{event.date}</dd>
+                    <dd className="mt-1 text-lg text-white">{event.deadline}</dd>
                   </div>
+                  {isHackathon ? (
+                    <div>
+                      <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-fog/80">Event day</dt>
+                      <dd className="mt-1 text-lg text-white">{event.eventDate}</dd>
+                    </div>
+                  ) : null}
                   <div>
                     <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-fog/80">Format</dt>
                     <dd className="mt-1 text-sm text-fog">{formatText}</dd>
@@ -476,7 +483,7 @@ export function EventPageView({ event }: { event: EventPageData }) {
                   <div>
                     <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-fog/80">Entry fee & prize</dt>
                     <dd className="mt-1 text-sm text-fog">
-                      {site.entryFee} {site.entryFeeNote} · Prize pool {site.prizePool}
+                      {event.entryFeeLabel} · Prize pool {site.prizePool}
                     </dd>
                   </div>
                   <div>

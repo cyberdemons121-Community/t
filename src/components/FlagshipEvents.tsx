@@ -50,9 +50,10 @@ export function FlagshipEvents() {
                 Two events. One <span className="text-blood">pack</span>.
               </h2>
               <p className="mt-5 text-base leading-relaxed text-fog md:text-lg">
-                The Hackathon builds, the CTF breaks. Both run at {site.entryFee} {site.entryFeeNote} with
-                a {site.prizePool} prize pool. Register, pay, and upload your payment screenshot — we
-                verify and send your confirmation, unique ID, and login credentials.
+                The Hackathon builds, the CTF breaks. Hackathon entry is {eventPages.hackathon.entryFeeLabel}
+                (flat for teams of 1–4); CTF entry is {eventPages.ctf.entryFeeLabel}. Both have a {site.prizePool} prize pool.
+                Register, pay, and upload your payment screenshot — we verify and send your confirmation,
+                unique ID, and login credentials.
               </p>
             </div>
             <a
@@ -108,13 +109,13 @@ export function FlagshipEvents() {
                     <div>
                       <dt className="font-mono text-[9px] uppercase tracking-[0.2em] text-fog/70">Format</dt>
                       <dd className="mt-1 text-sm font-medium text-white">
-                        {isHackathon ? "Teams up to 4" : "Solo"}
+                        {isHackathon ? "Teams 1–4" : "Solo"}
                       </dd>
                     </div>
                     <div>
                       <dt className="font-mono text-[9px] uppercase tracking-[0.2em] text-fog/70">Entry</dt>
                       <dd className="mt-1 text-sm font-medium text-white">
-                        {site.entryFee} <span className="text-fog">{site.entryFeeNote}</span>
+                        {event.entryFeeLabel}
                       </dd>
                     </div>
                     <div>

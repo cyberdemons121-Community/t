@@ -7,15 +7,43 @@ import { buttonGhost, buttonPrimary } from "../components/styles";
 export function LoginPage() {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
-  const [status, setStatus] = useState<"idle" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "error" | "ok">("idle");
+  const [message, setMessage] = useState("");
+  const [name, setName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!identifier.trim() || !password.trim()) {
       setStatus("error");
+      setMessage("Enter both your unique ID or email and password.");
       return;
     }
-    setStatus("error");
+
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: identifier.trim(), password }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        name?: string;
+        error?: string;
+      };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Access pending or credentials not recognized.");
+      }
+      setName(data.name || "operator");
+      setMessage("Access verified.");
+      setStatus("ok");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Login failed.");
+      setStatus("error");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -90,7 +118,7 @@ export function LoginPage() {
                   type="text"
                   autoComplete="username"
                   value={identifier}
-                  onChange={(e) => { setIdentifier(e.target.value); setStatus("idle"); }}
+                  onChange={(e) => { setIdentifier(e.target.value); setStatus("idle"); setMessage(""); }}
                   className={`field ${status === "error" && !identifier.trim() ? "field-error" : ""}`}
                   placeholder="your@email.com or CD-XXXX"
                 />
@@ -103,7 +131,7 @@ export function LoginPage() {
                   type="password"
                   autoComplete="current-password"
                   value={password}
-                  onChange={(e) => { setPassword(e.target.value); setStatus("idle"); }}
+                  onChange={(e) => { setPassword(e.target.value); setStatus("idle"); setMessage(""); }}
                   className={`field ${status === "error" && !password.trim() ? "field-error" : ""}`}
                   placeholder="Credentials from confirmation mail"
                 />
@@ -111,15 +139,25 @@ export function LoginPage() {
 
               {status === "error" ? (
                 <div className="border border-blood/40 bg-blood/10 p-4 text-sm text-fog" role="status">
-                  <p className="font-medium text-white">Access pending or credentials not recognized.</p>
+                  <p className="font-medium text-white">{message}</p>
                   <p className="mt-1 leading-relaxed">
-                    Login is enabled after registration and payment verification. If you’ve been verified, use the exact credentials sent to your mail. Otherwise, complete registration and wait for confirmation.
+                    Login is enabled after registration and verification. If you’ve been verified, use the exact credentials sent to your mail.
                   </p>
                 </div>
               ) : null}
 
-              <button type="submit" className={`${buttonPrimary} w-full`}>
-                Login
+              {status === "ok" ? (
+                <div className="border border-ice/40 bg-ice/[0.06] p-4 text-sm text-fog" role="status">
+                  <p className="font-medium text-white">Welcome, {name}.</p>
+                  <p className="mt-1 leading-relaxed">Your credentials are verified and access is active.</p>
+                  <a href={site.ctfUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex font-mono text-[11px] uppercase tracking-[0.18em] text-ice underline decoration-white/20 underline-offset-4 hover:decoration-current">
+                    Enter the CTF board <span aria-hidden="true">→</span>
+                  </a>
+                </div>
+              ) : null}
+
+              <button type="submit" disabled={submitting} className={`${buttonPrimary} w-full disabled:cursor-not-allowed disabled:opacity-60`}>
+                {submitting ? "Checking..." : "Login"}
                 <span aria-hidden="true">→</span>
               </button>
 

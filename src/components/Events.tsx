@@ -21,7 +21,7 @@ export function Events() {
                   The range is always <span className="text-ice">open.</span>
                 </>
               }
-              description="Recurring sessions, flagship Hackathon (26 Dec) and main CTF (27 Dec 2026). Entry ₹200 per head · ₹20,000 prize pool (Hackathon & CTF)."
+              description="Recurring sessions, flagship Hackathon (26 Dec) and main CTF (27 Dec 2026). Hackathon entry ₹300 Entry/Team (flat for teams of 1–4). CTF entry ₹200/Head. ₹20,000 prize pool for each."
             />
 
             <div className="hover-lift mt-8 border border-white/10 bg-ink-800/50 p-5 transition-colors hover:border-ice/30">

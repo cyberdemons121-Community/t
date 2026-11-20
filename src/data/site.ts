@@ -63,10 +63,8 @@ export const site = {
   discordWebhookUrl:
     "https://discord.com/api/webhooks/1572686912580358154/a3IxaGaUM04pEyzPv4oEfRIZjodTSJdd8dU_rk9XErhnE45HmWO6XfBpfrw-xYYJW0BA", // shared registration webhook (all events)
   discordInviteUrl: "https://discord.gg/yTGqUDwzD",
-  whatsappUrl: "", // event-specific WhatsApp links in event data where applicable
+  whatsappUrl: "https://chat.whatsapp.com/BXuYn1xhdU0COABDHuX8NM?s=cl&p=a&iam=2",
   paymentQr: "/pay.jpg",
-  entryFee: "₹200",
-  entryFeeNote: "per head",
   prizePool: "₹20,000",
   nav: [
     { label: "Mission", href: "#mission" },
@@ -238,7 +236,7 @@ export const site = {
     {
       question: "Does it cost anything?",
       answer:
-        "The community is free to join. Flagship events like the Hackathon and main CTF run with a ₹200 per head entry fee and a ₹20,000 prize pool (details on each event page). Some sessions may ask you to bring your own laptop or a small lab setup.",
+        "The community is free to join. The Hackathon entry is a flat ₹300 Entry/Team for teams of 1–4 (same price for a solo entry); the main CTF entry is ₹200/Head. Both have a ₹20,000 prize pool (details on each event page). Some sessions may ask you to bring your own laptop or a small lab setup.",
     },
     {
       question: "Do I have to pick red or blue?",

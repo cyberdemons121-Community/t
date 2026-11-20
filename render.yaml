@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: cyberdemons
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: ADMIN_EMAIL
+        value: cyberdemons121@gmail.com
+      - key: APP_URL
+        sync: false
+      - key: FROM_EMAIL
+        value: cyberdemons121@gmail.com
+      - key: SMTP_EMAIL
+        value: cyberdemons121@gmail.com
+      - key: SMTP_APP_PASSWORD
+        sync: false
+      - key: GOOGLE_SHEET_ID
+        sync: false
