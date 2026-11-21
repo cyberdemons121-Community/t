@@ -1,5 +1,6 @@
 import "dotenv/config";
 import crypto from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import express from "express";
 import multer from "multer";
@@ -7,6 +8,7 @@ import bcrypt from "bcryptjs";
 import { config } from "./config.js";
 import {
   appendRegistration,
+  findAllByIdentifier,
   findByToken,
   findByIdentifier,
   markVerified,
@@ -41,6 +43,69 @@ function displayName(details) {
   );
 }
 
+const uploadDir = path.join(process.cwd(), "uploads");
+const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+const sessionSecret =
+  config.sessionSecret || `${config.sheetId}:${config.smtpAppPassword}`;
+
+function signSession(payload) {
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", sessionSecret)
+    .update(body)
+    .digest("base64url");
+  return `${body}.${signature}`;
+}
+
+function currentSession(req) {
+  const cookie = req.headers.cookie || "";
+  const match = cookie.match(/(?:^|;\s*)cd_session=([^;]+)/);
+  const [body, signature] = String(match?.[1] || "").split(".");
+  if (!body || !signature) return undefined;
+
+  const expected = crypto
+    .createHmac("sha256", sessionSecret)
+    .update(body)
+    .digest("base64url");
+  const provided = Buffer.from(signature);
+  const valid =
+    provided.length === Buffer.from(expected).length &&
+    crypto.timingSafeEqual(provided, Buffer.from(expected));
+  if (!valid) return undefined;
+
+  try {
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    if (!payload.uniqueId || !payload.expires || payload.expires < Date.now()) {
+      return undefined;
+    }
+    return payload;
+  } catch {
+    return undefined;
+  }
+}
+
+function sessionCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: config.appUrl.startsWith("https://"),
+    maxAge: SESSION_MAX_AGE,
+    path: "/",
+  };
+}
+
+function safeFileName(name) {
+  return path.basename(String(name || "file")).replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function parseJson(value, fallback) {
+  try {
+    return JSON.parse(value || "") ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
@@ -62,7 +127,17 @@ app.post(
     const eventType = String(eventId || "").toLowerCase() === "ctf" ? "ctf" : "hackathon";
     const id = uniqueId();
     const token = crypto.randomBytes(24).toString("hex");
+    const password = crypto.randomBytes(9).toString("base64url");
+    const passwordHash = await bcrypt.hash(password, 10);
     const to = String(details.email).trim();
+
+    await fs.promises.mkdir(uploadDir, { recursive: true });
+    const storedUploads = [];
+    for (const file of files) {
+      const storedName = `${id}-${crypto.randomBytes(4).toString("hex")}-${safeFileName(file.originalname)}`;
+      await fs.promises.writeFile(path.join(uploadDir, storedName), file.buffer);
+      storedUploads.push({ field: file.fieldname, name: file.originalname, storedName });
+    }
 
     await appendRegistration({
       timestamp: new Date().toISOString(),
@@ -77,8 +152,13 @@ app.post(
       name: displayName(details),
       email: to,
       token,
+      password,
+      passwordHash,
+      phone: String(details.phone || "").trim(),
+      registeredFor: eventType === "ctf" ? "CTF" : "Hackathon",
       details,
       files: files.map((file) => file.originalname),
+      uploads: storedUploads,
     });
 
     await sendVerificationMail({
@@ -112,8 +192,13 @@ app.get(
       return res.type("html").send(page("Already verified", "This registration has already been verified."));
     }
 
-    const password = crypto.randomBytes(9).toString("base64url");
-    const passwordHash = await bcrypt.hash(password, 10);
+    let password = row.get("password");
+    let passwordHash = row.get("passwordHash");
+    if (!password || !passwordHash) {
+      password = crypto.randomBytes(9).toString("base64url");
+      passwordHash = await bcrypt.hash(password, 10);
+      row.set("password", password);
+    }
     await markVerified(row, passwordHash);
 
     const details = JSON.parse(row.get("details") || "{}");
@@ -135,6 +220,58 @@ app.get(
 );
 
 app.post(
+  "/api/submission",
+  upload.fields([{ name: "ppt", maxCount: 1 }]),
+  asyncRoute(async (req, res) => {
+    const session = currentSession(req);
+    if (!session) {
+      return res.status(401).json({ ok: false, error: "Not signed in." });
+    }
+
+    const row = await findByIdentifier(session.uniqueId);
+    if (!row) {
+      return res.status(401).json({ ok: false, error: "Session expired." });
+    }
+
+    const details = parseJson(row.get("details"), {});
+    const uploads = parseJson(row.get("uploads"), []);
+    const repo = typeof req.body.repo === "string" ? req.body.repo.trim() : undefined;
+
+    if (repo !== undefined) {
+      details.repo = repo;
+      row.set("details", JSON.stringify(details));
+    }
+
+    const pptFile = (req.files?.ppt || [])[0];
+    if (pptFile) {
+      await fs.promises.mkdir(uploadDir, { recursive: true });
+      const storedName = `${row.get("uniqueId")}-${crypto.randomBytes(4).toString("hex")}-${safeFileName(pptFile.originalname)}`;
+      await fs.promises.writeFile(path.join(uploadDir, storedName), pptFile.buffer);
+
+      const current = Array.isArray(uploads) ? uploads : [];
+      const previous = current.find((file) => file.field === "ppt");
+      if (previous?.storedName) {
+        await fs.promises
+          .unlink(path.join(uploadDir, path.basename(previous.storedName)))
+          .catch(() => {});
+      }
+
+      row.set(
+        "uploads",
+        JSON.stringify([
+          ...current.filter((file) => file.field !== "ppt"),
+          { field: "ppt", name: pptFile.originalname, storedName },
+        ]),
+      );
+      row.set("ppt", pptFile.originalname);
+    }
+
+    await row.save({ raw: true });
+    res.json({ ok: true });
+  }),
+);
+
+app.post(
   "/api/login",
   asyncRoute(async (req, res) => {
     const { identifier, password } = req.body || {};
@@ -142,19 +279,106 @@ app.post(
       return res.status(400).json({ ok: false, error: "Identifier and password are required." });
     }
 
-    const row = await findByIdentifier(String(identifier));
-    const hash = row?.get("passwordHash") || "";
-    const valid =
-      row &&
-      row.get("status") === "verified" &&
-      hash &&
-      (await bcrypt.compare(String(password), hash));
+    const candidates = await findAllByIdentifier(String(identifier));
+    let row;
+    for (const candidate of candidates) {
+      const hash = candidate.get("passwordHash") || "";
+      if (
+        candidate.get("status") === "verified" &&
+        hash &&
+        (await bcrypt.compare(String(password), hash))
+      ) {
+        row = candidate;
+        break;
+      }
+    }
 
-    if (!valid) {
+    if (!row) {
       return res.status(401).json({ ok: false, error: "Access pending or credentials not recognized." });
     }
 
-    res.json({ ok: true, uniqueId: row.get("uniqueId"), name: row.get("name") });
+    const sessionToken = signSession({
+      uniqueId: row.get("uniqueId"),
+      expires: Date.now() + SESSION_MAX_AGE,
+    });
+    res.cookie("cd_session", sessionToken, sessionCookieOptions());
+
+    res.json({
+      ok: true,
+      uniqueId: row.get("uniqueId"),
+      name: row.get("name"),
+      event: row.get("event"),
+      eventName: row.get("event_name") || row.get("eventName"),
+    });
+  }),
+);
+
+app.get(
+  "/api/me",
+  asyncRoute(async (req, res) => {
+    const session = currentSession(req);
+    if (!session) {
+      return res.status(401).json({ ok: false, error: "Not signed in." });
+    }
+
+    const row = await findByIdentifier(session.uniqueId);
+    if (!row) {
+      return res.status(401).json({ ok: false, error: "Session expired." });
+    }
+
+    const uploads = parseJson(row.get("uploads"), []);
+    res.json({
+      ok: true,
+      uniqueId: row.get("uniqueId"),
+      name: row.get("name"),
+      event: row.get("event"),
+      eventName: row.get("event_name") || row.get("eventName"),
+      registeredFor:
+        row.get("registered_for") ||
+        (row.get("event") === "ctf" ? "CTF" : "Hackathon"),
+      status: row.get("status"),
+      details: parseJson(row.get("details"), {}),
+      uploads: Array.isArray(uploads)
+        ? uploads.map((file) => ({
+            field: file.field,
+            name: file.name,
+            url: `/api/files/${encodeURIComponent(file.field)}`,
+          }))
+        : [],
+    });
+  }),
+);
+
+app.get(
+  "/api/files/:field",
+  asyncRoute(async (req, res) => {
+    const session = currentSession(req);
+    if (!session) {
+      return res.status(401).json({ ok: false, error: "Not signed in." });
+    }
+
+    const row = await findByIdentifier(session.uniqueId);
+    const uploads = parseJson(row?.get("uploads"), []);
+    const file = Array.isArray(uploads)
+      ? uploads.find((item) => item.field === req.params.field)
+      : undefined;
+    if (!file?.storedName) {
+      return res.status(404).json({ ok: false, error: "File not found." });
+    }
+
+    const filePath = path.join(uploadDir, path.basename(file.storedName));
+    try {
+      await fs.promises.access(filePath);
+    } catch {
+      return res.status(404).json({ ok: false, error: "File not found." });
+    }
+
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+    );
+    res.type(path.extname(file.name) || "application/octet-stream");
+    fs.createReadStream(filePath).pipe(res);
   }),
 );
 

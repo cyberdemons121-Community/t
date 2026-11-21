@@ -30,14 +30,19 @@ export function LoginPage() {
       const data = (await response.json().catch(() => ({}))) as {
         ok?: boolean;
         name?: string;
+        event?: string;
+        uniqueId?: string;
         error?: string;
       };
       if (!response.ok || !data.ok) {
         throw new Error(data.error || "Access pending or credentials not recognized.");
       }
       setName(data.name || "operator");
-      setMessage("Access verified.");
+      setMessage("Access verified. Redirecting...");
       setStatus("ok");
+      window.location.assign(
+        data.event === "ctf" ? site.ctfUrl : "/hackathon-updates.html",
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Login failed.");
       setStatus("error");
@@ -149,10 +154,10 @@ export function LoginPage() {
               {status === "ok" ? (
                 <div className="border border-ice/40 bg-ice/[0.06] p-4 text-sm text-fog" role="status">
                   <p className="font-medium text-white">Welcome, {name}.</p>
-                  <p className="mt-1 leading-relaxed">Your credentials are verified and access is active.</p>
-                  <a href={site.ctfUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex font-mono text-[11px] uppercase tracking-[0.18em] text-ice underline decoration-white/20 underline-offset-4 hover:decoration-current">
-                    Enter the CTF board <span aria-hidden="true">→</span>
-                  </a>
+                  <p className="mt-1 leading-relaxed">{message}</p>
+                  <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.16em] text-fog/80">
+                    Taking you to your event portal.
+                  </p>
                 </div>
               ) : null}
 

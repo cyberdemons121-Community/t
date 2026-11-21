@@ -8,6 +8,7 @@ export default defineConfig({
       input: {
         main: "index.html",
         hackathon: "hackathon.html",
+        hackathonUpdates: "hackathon-updates.html",
         ctf: "ctf.html",
         login: "login.html",
       },

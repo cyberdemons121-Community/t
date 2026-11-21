@@ -2,6 +2,7 @@ import { SiteLayout } from "./components/SiteLayout";
 import type { PageId } from "./data/site";
 import { CtfPage } from "./pages/CtfPage";
 import { HackathonPage } from "./pages/HackathonPage";
+import { HackathonUpdatesPage } from "./pages/HackathonUpdatesPage";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
 
@@ -14,6 +15,7 @@ function App({ page }: AppProps) {
     <SiteLayout page={page}>
       {page === "home" ? <HomePage /> : null}
       {page === "hackathon" ? <HackathonPage /> : null}
+      {page === "hackathon-updates" ? <HackathonUpdatesPage /> : null}
       {page === "ctf" ? <CtfPage /> : null}
       {page === "login" ? <LoginPage /> : null}
     </SiteLayout>

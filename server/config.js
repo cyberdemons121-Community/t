@@ -9,6 +9,7 @@ export const config = {
     process.env.SMTP_EMAIL ||
     "cyberdemons121@gmail.com",
   sheetId: process.env.GOOGLE_SHEET_ID || "",
+  sessionSecret: process.env.SESSION_SECRET || "",
 };
 
 export function missingEnv(keys) {

@@ -6,20 +6,24 @@ const HEADERS = [
   "timestamp",
   "event",
   "uniqueId",
-  "name",
+  "password",
+  "team_name",
+  "captain_name",
   "email",
+  "team_size",
+  "phone",
   "status",
+  "ppt",
+  "payment_screenshot",
+  "name",
   "token",
   "passwordHash",
   "verifiedAt",
   "details",
   "files",
   "event_name",
-  "team_name",
-  "captain_name",
-  "team_size",
-  "ppt",
-  "payment_screenshot",
+  "uploads",
+  "registered_for",
 ];
 
 let docPromise;
@@ -63,7 +67,7 @@ export async function appendRegistration(record) {
     email: record.email,
     status: "pending",
     token: record.token,
-    passwordHash: "",
+    passwordHash: record.passwordHash,
     verifiedAt: "",
     details: JSON.stringify(record.details),
     files: JSON.stringify(record.files),
@@ -73,26 +77,35 @@ export async function appendRegistration(record) {
     team_size: record.teamSize,
     ppt: record.ppt,
     payment_screenshot: record.paymentScreenshot,
-  });
+    uploads: JSON.stringify(record.uploads || []),
+    phone: record.phone || "",
+    password: record.password,
+    registered_for: record.registeredFor,
+  }, { raw: true });
 }
 
-async function findRow(predicate) {
+async function findRows(predicate) {
   const sheet = await getSheet();
   const rows = await sheet.getRows();
-  return rows.find(predicate);
+  return rows.filter(predicate);
 }
 
-export function findByToken(token) {
-  return findRow((row) => row.get("token") === token);
+export async function findByToken(token) {
+  const rows = await findRows((row) => row.get("token") === token);
+  return rows[0];
 }
 
-export function findByIdentifier(identifier) {
+export function findAllByIdentifier(identifier) {
   const value = identifier.trim().toLowerCase();
-  return findRow(
+  return findRows(
     (row) =>
       String(row.get("uniqueId") || "").toLowerCase() === value ||
       String(row.get("email") || "").toLowerCase() === value,
   );
+}
+
+export function findByIdentifier(identifier) {
+  return findRows((row) => row.get("uniqueId") === identifier).then((rows) => rows[0]);
 }
 
 export async function markVerified(row, passwordHash) {

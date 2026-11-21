@@ -243,6 +243,16 @@ const hackathon: EventPageData = {
         autoComplete: "email",
       },
       {
+        name: "phone",
+        label: "Phone / WhatsApp number",
+        type: "text",
+        required: true,
+        minLength: 8,
+        maxLength: 20,
+        placeholder: "+91...",
+        autoComplete: "tel",
+      },
+      {
         name: "teamSize",
         label: "Team size (max 4)",
         type: "select",
@@ -363,7 +373,7 @@ const ctf: EventPageData = {
     description: paymentAndConfirmNote("₹200/Head"),
     submitLabel: "Submit CTF registration",
     subjectTag: "[CTF]",
-    whatsappUrl: "https://chat.whatsapp.com/BXuYn1xhdU0COABDHuX8NM?s=cl&p=a&iam=2",
+    whatsappUrl: "https://chat.whatsapp.com/DRi5ty5tUPSCEO3jLE0GOF?s=cl&p=a&iam=2",
     fields: [
       { name: "handle", label: "Handle", type: "text", required: true, minLength: 3, maxLength: 40, placeholder: "0xghost", autoComplete: "nickname" },
       { name: "email", label: "Contact email", type: "email", required: true, maxLength: 120, placeholder: "you@example.com", autoComplete: "email" },

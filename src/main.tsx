@@ -18,7 +18,10 @@ if (!rootElement) {
 
 const pageAttr = rootElement.dataset.page;
 const page: PageId =
-  pageAttr === "hackathon" || pageAttr === "ctf" || pageAttr === "login"
+  pageAttr === "hackathon" ||
+  pageAttr === "hackathon-updates" ||
+  pageAttr === "ctf" ||
+  pageAttr === "login"
     ? pageAttr
     : "home";
 
