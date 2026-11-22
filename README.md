@@ -106,8 +106,10 @@ Copy `.env.example` to `.env` and fill in:
 - `GOOGLE_SHEET_ID` — the registration spreadsheet. Authentication uses
   Application Default Credentials (ADC): run `gcloud auth application-default
   login` locally with the Google account that has Editor access to the sheet,
-  and enable the Sheets API. No service-account key or `GOOGLE_PRIVATE_KEY` is
-  needed. A `Registrations` tab and header row are created automatically.
+  and enable the Sheets API. On hosting without ADC (for example Render), set
+  `GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_PRIVATE_KEY` instead; the private
+  key may include literal `\n` characters. A `Registrations` tab and header row
+  are created automatically.
 - `APP_URL` — public URL of this service (used in verification/login links).
 - `ADMIN_EMAIL` — address that receives verification mail.
 - `ADMIN_PASSWORD` — password for `/admin.html`. Without it the dashboard login is disabled.
@@ -133,6 +135,8 @@ the score and file endpoints reject requests without it.
 
 `render.yaml` defines a Render web service: `npm run build` then `npm start`,
 where `npm start` runs `server/index.js` and serves both the API and the built
-`dist/` site. Set the env vars above in the Render dashboard (or blueprint).
-Keep event page URLs as `/hackathon.html` and `/ctf.html`.
+`dist/` site. Set `APP_URL`, `SMTP_APP_PASSWORD`, `GOOGLE_SHEET_ID`,
+`GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`, `SESSION_SECRET`, and
+`ADMIN_PASSWORD` in the Render dashboard (they are `sync: false` in the
+blueprint). Keep event page URLs as `/hackathon.html` and `/ctf.html`.
 

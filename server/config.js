@@ -9,6 +9,8 @@ export const config = {
     process.env.SMTP_EMAIL ||
     "cyberdemons121@gmail.com",
   sheetId: process.env.GOOGLE_SHEET_ID || "",
+  serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "",
+  privateKey: process.env.GOOGLE_PRIVATE_KEY || "",
   sessionSecret: process.env.SESSION_SECRET || "",
   adminPassword: process.env.ADMIN_PASSWORD || "",
 };

@@ -38,9 +38,17 @@ async function getDoc() {
   }
 
   if (!docPromise) {
-    const auth = new GoogleAuth({
-      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-    });
+    const scopes = ["https://www.googleapis.com/auth/spreadsheets"];
+    const auth =
+      config.serviceAccountEmail && config.privateKey
+        ? new GoogleAuth({
+            scopes,
+            credentials: {
+              client_email: config.serviceAccountEmail,
+              private_key: config.privateKey.replace(/\\n/g, "\n"),
+            },
+          })
+        : new GoogleAuth({ scopes });
     docPromise = (async () => {
       const doc = new GoogleSpreadsheet(config.sheetId, auth);
       await doc.loadInfo();
