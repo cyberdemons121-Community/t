@@ -40,11 +40,17 @@ function stepError(step, error) {
   return wrapped;
 }
 
-async function registrationStep(step, handler) {
+async function registrationStep(step, handler, timeoutMs = 20000) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${step} timed out`)), timeoutMs);
+  });
   try {
-    return await handler();
+    return await Promise.race([Promise.resolve().then(handler), timeout]);
   } catch (error) {
     throw stepError(step, error);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

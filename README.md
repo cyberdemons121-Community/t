@@ -100,9 +100,11 @@ index.html
 
 Copy `.env.example` to `.env` and fill in:
 
-- `SMTP_EMAIL`, `SMTP_APP_PASSWORD` — Gmail address and a **Gmail App Password**
-  (not the account password). Enable 2-Step Verification and generate an app
-  password for "Mail". `FROM_EMAIL` defaults to `SMTP_EMAIL`.
+- `RESEND_API_KEY` — API key for HTTPS email delivery (works on hosts that block
+  SMTP ports, e.g. free Render services). `FROM_EMAIL` must be a sender verified
+  in Resend. Without this key, mail falls back to Gmail SMTP using
+  `SMTP_EMAIL` and `SMTP_APP_PASSWORD` (a Gmail App Password, not the account
+  password). `FROM_EMAIL` defaults to `SMTP_EMAIL`.
 - `GOOGLE_SHEET_ID` — the registration spreadsheet. Authentication uses
   Application Default Credentials (ADC): run `gcloud auth application-default
   login` locally with the Google account that has Editor access to the sheet,
@@ -135,8 +137,10 @@ the score and file endpoints reject requests without it.
 
 `render.yaml` defines a Render web service: `npm run build` then `npm start`,
 where `npm start` runs `server/index.js` and serves both the API and the built
-`dist/` site. Set `APP_URL`, `SMTP_APP_PASSWORD`, `GOOGLE_SHEET_ID`,
+`dist/` site. Set `APP_URL`, `RESEND_API_KEY`, `FROM_EMAIL`, `GOOGLE_SHEET_ID`,
 `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`, `SESSION_SECRET`, and
 `ADMIN_PASSWORD` in the Render dashboard (they are `sync: false` in the
-blueprint). Keep event page URLs as `/hackathon.html` and `/ctf.html`.
+blueprint). Free Render services block SMTP ports, so the `RESEND_API_KEY`
+path is required unless the service is upgraded to a paid instance. Keep event
+page URLs as `/hackathon.html` and `/ctf.html`.
 

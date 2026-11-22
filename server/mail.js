@@ -12,9 +12,43 @@ function client() {
     transporter = nodemailer.createTransport({
       service: "gmail",
       auth: { user: config.smtpUser, pass: config.smtpAppPassword },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
     });
   }
   return transporter;
+}
+
+async function deliver(message) {
+  if (config.resendApiKey) {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.resendApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: message.from,
+        to: [message.to],
+        subject: message.subject,
+        html: message.html,
+        reply_to: message.replyTo ? [message.replyTo] : undefined,
+        attachments: (message.attachments || []).map((attachment) => ({
+          filename: attachment.filename,
+          content: Buffer.from(attachment.content).toString("base64"),
+        })),
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.message || `Resend API error (${response.status}).`);
+    }
+    return result;
+  }
+
+  return client().sendMail(message);
 }
 
 function baseUrl() {
@@ -31,7 +65,7 @@ export async function sendVerificationMail({ to, eventName, uniqueId, token, det
     ? files.map((file) => `<li>${escapeHtml(file)}</li>`).join("")
     : "<li>None</li>";
 
-  await client().sendMail({
+  await deliver({
     from: config.fromEmail,
     to: config.adminEmail,
     replyTo: to,
@@ -53,7 +87,7 @@ export async function sendVerificationMail({ to, eventName, uniqueId, token, det
 
 export async function sendConfirmationMail({ to, name, uniqueId, password, eventName }) {
   const loginUrl = `${baseUrl()}/login.html`;
-  await client().sendMail({
+  await deliver({
     from: config.fromEmail,
     to,
     subject: `You're verified — ${eventName} login credentials`,

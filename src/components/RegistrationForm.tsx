@@ -144,7 +144,7 @@ export function RegistrationForm({
     });
 
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 60000);
+    const timeout = window.setTimeout(() => controller.abort(), 120000);
 
     try {
       const response = await fetch("/api/register", {
@@ -165,7 +165,7 @@ export function RegistrationForm({
     } catch (error) {
       setSubmitError(
         error instanceof DOMException && error.name === "AbortError"
-          ? "The server took too long to respond. Please try again."
+          ? "The server took too long to respond (2 minutes). Please try again."
           : error instanceof Error
             ? error.message
             : "Registration could not be submitted.",

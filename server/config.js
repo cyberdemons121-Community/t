@@ -4,6 +4,7 @@ export const config = {
   adminEmail: process.env.ADMIN_EMAIL || "cyberdemons121@gmail.com",
   smtpUser: process.env.SMTP_EMAIL || "",
   smtpAppPassword: process.env.SMTP_APP_PASSWORD || "",
+  resendApiKey: process.env.RESEND_API_KEY || "",
   fromEmail:
     process.env.FROM_EMAIL ||
     process.env.SMTP_EMAIL ||
