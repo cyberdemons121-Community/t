@@ -33,6 +33,21 @@ function asyncRoute(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 }
 
+function stepError(step, error) {
+  console.error(`Registration step "${step}" failed:`, error.message);
+  const wrapped = new Error(`Registration could not be completed (${step}).`);
+  wrapped.registrationStep = step;
+  return wrapped;
+}
+
+async function registrationStep(step, handler) {
+  try {
+    return await handler();
+  } catch (error) {
+    throw stepError(step, error);
+  }
+}
+
 function uniqueId() {
   const time = Date.now().toString(36).toUpperCase();
   const random = crypto.randomBytes(3).toString("hex").toUpperCase();
@@ -153,15 +168,17 @@ app.post(
     const passwordHash = await bcrypt.hash(password, 10);
     const to = String(details.email).trim();
 
-    await fs.promises.mkdir(uploadDir, { recursive: true });
     const storedUploads = [];
-    for (const file of files) {
-      const storedName = `${id}-${crypto.randomBytes(4).toString("hex")}-${safeFileName(file.originalname)}`;
-      await fs.promises.writeFile(path.join(uploadDir, storedName), file.buffer);
-      storedUploads.push({ field: file.fieldname, name: file.originalname, storedName });
-    }
+    await registrationStep("upload storage", async () => {
+      await fs.promises.mkdir(uploadDir, { recursive: true });
+      for (const file of files) {
+        const storedName = `${id}-${crypto.randomBytes(4).toString("hex")}-${safeFileName(file.originalname)}`;
+        await fs.promises.writeFile(path.join(uploadDir, storedName), file.buffer);
+        storedUploads.push({ field: file.fieldname, name: file.originalname, storedName });
+      }
+    });
 
-    await appendRegistration({
+    const registration = {
       timestamp: new Date().toISOString(),
       event: eventType,
       eventName,
@@ -181,9 +198,10 @@ app.post(
       details,
       files: files.map((file) => file.originalname),
       uploads: storedUploads,
-    });
+    };
+    await registrationStep("spreadsheet", () => appendRegistration(registration));
 
-    await sendVerificationMail({
+    const verificationMail = {
       to,
       eventName,
       uniqueId: id,
@@ -194,7 +212,8 @@ app.post(
         filename: file.originalname,
         content: file.buffer,
       })),
-    });
+    };
+    await registrationStep("verification email", () => sendVerificationMail(verificationMail));
 
     res.status(201).json({ ok: true, uniqueId: id });
   }),
@@ -526,6 +545,9 @@ app.use((error, _req, res, _next) => {
   console.error("API error:", error.message);
   if (error instanceof multer.MulterError) {
     return res.status(400).json({ ok: false, error: "Upload failed: " + error.message });
+  }
+  if (error.registrationStep) {
+    return res.status(500).json({ ok: false, error: error.message });
   }
   res.status(500).json({ ok: false, error: "Registration could not be completed. Please try again." });
 });

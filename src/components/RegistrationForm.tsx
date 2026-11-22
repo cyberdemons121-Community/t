@@ -143,8 +143,15 @@ export function RegistrationForm({
       if (file) body.append(name, file, file.name);
     });
 
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 60000);
+
     try {
-      const response = await fetch("/api/register", { method: "POST", body });
+      const response = await fetch("/api/register", {
+        method: "POST",
+        body,
+        signal: controller.signal,
+      });
       const data = (await response.json().catch(() => ({}))) as {
         ok?: boolean;
         uniqueId?: string;
@@ -157,9 +164,14 @@ export function RegistrationForm({
       setSent(true);
     } catch (error) {
       setSubmitError(
-        error instanceof Error ? error.message : "Registration could not be submitted.",
+        error instanceof DOMException && error.name === "AbortError"
+          ? "The server took too long to respond. Please try again."
+          : error instanceof Error
+            ? error.message
+            : "Registration could not be submitted.",
       );
     } finally {
+      window.clearTimeout(timeout);
       setSubmitting(false);
     }
   };
