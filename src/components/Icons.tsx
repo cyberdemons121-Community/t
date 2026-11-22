@@ -24,7 +24,7 @@ function TerminalIcon(props: IconProps) {
   );
 }
 
-function CrosshairIcon(props: IconProps) {
+export function CrosshairIcon(props: IconProps) {
   return (
     <svg {...base} {...props}>
       <circle cx="12" cy="12" r="7" />
@@ -63,7 +63,7 @@ function UsersIcon(props: IconProps) {
   );
 }
 
-function FileIcon(props: IconProps) {
+export function FileIcon(props: IconProps) {
   return (
     <svg {...base} {...props}>
       <path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" />

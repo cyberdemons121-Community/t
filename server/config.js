@@ -10,6 +10,7 @@ export const config = {
     "cyberdemons121@gmail.com",
   sheetId: process.env.GOOGLE_SHEET_ID || "",
   sessionSecret: process.env.SESSION_SECRET || "",
+  adminPassword: process.env.ADMIN_PASSWORD || "",
 };
 
 export function missingEnv(keys) {

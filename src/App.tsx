@@ -1,3 +1,4 @@
+import { AdminPage } from "./pages/AdminPage";
 import { SiteLayout } from "./components/SiteLayout";
 import type { PageId } from "./data/site";
 import { CtfPage } from "./pages/CtfPage";
@@ -18,6 +19,7 @@ function App({ page }: AppProps) {
       {page === "hackathon-updates" ? <HackathonUpdatesPage /> : null}
       {page === "ctf" ? <CtfPage /> : null}
       {page === "login" ? <LoginPage /> : null}
+      {page === "admin" ? <AdminPage /> : null}
     </SiteLayout>
   );
 }

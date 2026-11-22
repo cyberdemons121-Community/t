@@ -8,10 +8,16 @@ import bcrypt from "bcryptjs";
 import { config } from "./config.js";
 import {
   appendRegistration,
+  deleteScore,
   findAllByIdentifier,
   findByToken,
   findByIdentifier,
+  findStoredUpload,
+  listCtfTeams,
+  listPptUploads,
+  listScores,
   markVerified,
+  upsertScore,
 } from "./sheets.js";
 import { sendConfirmationMail, sendVerificationMail } from "./mail.js";
 
@@ -45,6 +51,7 @@ function displayName(details) {
 
 const uploadDir = path.join(process.cwd(), "uploads");
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+const ADMIN_SESSION_MAX_AGE = 12 * 60 * 60 * 1000;
 const sessionSecret =
   config.sessionSecret || `${config.sheetId}:${config.smtpAppPassword}`;
 
@@ -57,9 +64,9 @@ function signSession(payload) {
   return `${body}.${signature}`;
 }
 
-function currentSession(req) {
+function readSession(req, cookieName) {
   const cookie = req.headers.cookie || "";
-  const match = cookie.match(/(?:^|;\s*)cd_session=([^;]+)/);
+  const match = cookie.match(new RegExp(`(?:^|;\\s*)${cookieName}=([^;]+)`));
   const [body, signature] = String(match?.[1] || "").split(".");
   if (!body || !signature) return undefined;
 
@@ -75,23 +82,38 @@ function currentSession(req) {
 
   try {
     const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-    if (!payload.uniqueId || !payload.expires || payload.expires < Date.now()) {
-      return undefined;
-    }
+    if (!payload.expires || payload.expires < Date.now()) return undefined;
     return payload;
   } catch {
     return undefined;
   }
 }
 
-function sessionCookieOptions() {
+function currentSession(req) {
+  const payload = readSession(req, "cd_session");
+  return payload?.uniqueId ? payload : undefined;
+}
+
+function currentAdmin(req) {
+  const payload = readSession(req, "cd_admin");
+  return payload?.admin === true ? payload : undefined;
+}
+
+function sessionCookieOptions(maxAge = SESSION_MAX_AGE) {
   return {
     httpOnly: true,
     sameSite: "lax",
     secure: config.appUrl.startsWith("https://"),
-    maxAge: SESSION_MAX_AGE,
+    maxAge,
     path: "/",
   };
+}
+
+function requireAdmin(req, res, next) {
+  if (!currentAdmin(req)) {
+    return res.status(401).json({ ok: false, error: "Admin access required." });
+  }
+  next();
 }
 
 function safeFileName(name) {
@@ -346,6 +368,120 @@ app.get(
           }))
         : [],
     });
+  }),
+);
+
+app.post("/api/admin/login", (req, res) => {
+  const password = String(req.body?.password || "");
+  if (!config.adminPassword || !password) {
+    return res.status(401).json({ ok: false, error: "Admin access is not configured." });
+  }
+
+  const provided = crypto.createHash("sha256").update(password).digest();
+  const expected = crypto.createHash("sha256").update(config.adminPassword).digest();
+  if (!crypto.timingSafeEqual(provided, expected)) {
+    return res.status(401).json({ ok: false, error: "Incorrect admin password." });
+  }
+
+  res.cookie(
+    "cd_admin",
+    signSession({ admin: true, expires: Date.now() + ADMIN_SESSION_MAX_AGE }),
+    sessionCookieOptions(ADMIN_SESSION_MAX_AGE),
+  );
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/me", requireAdmin, (_req, res) => {
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/logout", (_req, res) => {
+  res.clearCookie("cd_admin", { path: "/" });
+  res.json({ ok: true });
+});
+
+app.get(
+  "/api/admin/hackathon/ppts",
+  requireAdmin,
+  asyncRoute(async (_req, res) => {
+    const ppts = await listPptUploads("hackathon");
+    res.json({
+      ok: true,
+      ppts: ppts.map((ppt) => ({
+        ...ppt,
+        url: `/api/admin/files/${encodeURIComponent(ppt.storedName)}`,
+      })),
+    });
+  }),
+);
+
+app.get(
+  "/api/admin/files/:storedName",
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    const storedName = path.basename(String(req.params.storedName));
+    const file = storedName === req.params.storedName ? await findStoredUpload(storedName) : undefined;
+    if (!file) {
+      return res.status(404).json({ ok: false, error: "File not found." });
+    }
+
+    const filePath = path.join(uploadDir, storedName);
+    try {
+      await fs.promises.access(filePath);
+    } catch {
+      return res.status(404).json({ ok: false, error: "File not found." });
+    }
+
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename*=UTF-8''${encodeURIComponent(file.name || storedName)}`,
+    );
+    res.type(path.extname(file.name || storedName) || "application/octet-stream");
+    fs.createReadStream(filePath).pipe(res);
+  }),
+);
+
+app.get(
+  "/api/admin/ctf/scores",
+  requireAdmin,
+  asyncRoute(async (_req, res) => {
+    const [scores, teams] = await Promise.all([listScores(), listCtfTeams()]);
+    res.json({ ok: true, scores, teams });
+  }),
+);
+
+app.post(
+  "/api/admin/ctf/scores",
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    const team = String(req.body?.team || "").trim();
+    const uniqueId = String(req.body?.uniqueId || "").trim();
+    const points = Number(req.body?.points);
+
+    if (!team || !Number.isFinite(points) || points < 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "Select a team and enter a valid score of zero or more.",
+      });
+    }
+
+    await upsertScore({ uniqueId, team, points: Math.round(points * 100) / 100 });
+    res.json({ ok: true });
+  }),
+);
+
+app.delete(
+  "/api/admin/ctf/scores",
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    const uniqueId = String(req.query.uniqueId || "").trim();
+    const team = String(req.query.team || "").trim();
+    if (!uniqueId && !team) {
+      return res.status(400).json({ ok: false, error: "A team is required." });
+    }
+
+    await deleteScore({ uniqueId, team });
+    res.json({ ok: true });
   }),
 );
 

@@ -21,7 +21,8 @@ const page: PageId =
   pageAttr === "hackathon" ||
   pageAttr === "hackathon-updates" ||
   pageAttr === "ctf" ||
-  pageAttr === "login"
+  pageAttr === "login" ||
+  pageAttr === "admin"
     ? pageAttr
     : "home";
 

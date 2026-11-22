@@ -36,6 +36,7 @@ The dev server prints a local URL (default `http://localhost:5173`).
 - `/hackathon.html` — CyberDemons Hackathon 2026 (PPT submissions close
   **23 December 2026**, event day **26 December 2026**).
 - `/ctf.html` — CyberDemons CTF 2026 (event day **27 December 2026**).
+- `/admin.html` — Admin dashboard: hackathon PPT submissions and CTF scoreboard.
 
 Page selection is driven by `#root[data-page]` in each HTML entry and wired as
 Vite/Rollup inputs in `vite.config.ts`. Event links use absolute paths
@@ -109,9 +110,24 @@ Copy `.env.example` to `.env` and fill in:
   needed. A `Registrations` tab and header row are created automatically.
 - `APP_URL` — public URL of this service (used in verification/login links).
 - `ADMIN_EMAIL` — address that receives verification mail.
+- `ADMIN_PASSWORD` — password for `/admin.html`. Without it the dashboard login is disabled.
 
 Local dev: run `npm run server` and `npm run dev` in separate terminals; Vite
 proxies `/api` to port 3001.
+
+## Admin dashboard
+
+Open `/admin.html` and sign in with `ADMIN_PASSWORD`. The dashboard asks which
+event to review:
+
+- **Hackathon** — lists every PPT uploaded by participants (at registration or
+  later from the submission portal), with download links to the original files.
+- **CTF** — scoreboard ranked by points, highest first. Pick a registered team
+  (or type a new one), enter points, and save; a `Scores` tab is created in the
+  registration spreadsheet automatically.
+
+Admin sessions use an httpOnly `cd_admin` cookie signed with `SESSION_SECRET`;
+the score and file endpoints reject requests without it.
 
 ## Deploying
 

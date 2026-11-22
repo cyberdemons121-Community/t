@@ -8,7 +8,7 @@ export type IconName =
 
 export type TrackId = "red" | "blue";
 
-export type PageId = "home" | "hackathon" | "hackathon-updates" | "ctf" | "login";
+export type PageId = "home" | "hackathon" | "hackathon-updates" | "ctf" | "login" | "admin";
 
 export interface NavItem {
   label: string;
