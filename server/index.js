@@ -229,6 +229,7 @@ async function deliverCredentials(row, details, password) {
     await sendConfirmationMail({ ...payload, to: participantEmail });
     return { deliveredTo: participantEmail, fallback: false };
   } catch (error) {
+    console.error(`Credential email to ${participantEmail} failed:`, error.message);
     const adminEmail = config.adminEmail;
     if (!adminEmail || adminEmail === participantEmail) throw error;
     await sendConfirmationMail({
