@@ -5,6 +5,8 @@ export const config = {
   smtpUser: process.env.SMTP_EMAIL || "",
   smtpAppPassword: process.env.SMTP_APP_PASSWORD || "",
   resendApiKey: process.env.RESEND_API_KEY || "",
+  mailRelayUrl: process.env.MAIL_RELAY_URL || "",
+  mailRelaySecret: process.env.MAIL_RELAY_SECRET || "",
   fromEmail:
     process.env.FROM_EMAIL ||
     process.env.SMTP_EMAIL ||

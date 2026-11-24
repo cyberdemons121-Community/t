@@ -109,11 +109,17 @@ index.html
 
 Copy `.env.example` to `.env` and fill in:
 
-- `RESEND_API_KEY` — API key for HTTPS email delivery (works on hosts that block
-  SMTP ports, e.g. free Render services). `FROM_EMAIL` must be a sender verified
-  in Resend. Without this key, mail falls back to Gmail SMTP using
-  `SMTP_EMAIL` and `SMTP_APP_PASSWORD` (a Gmail App Password, not the account
-  password). `FROM_EMAIL` defaults to `SMTP_EMAIL`.
+- `RESEND_API_KEY` — API key for HTTPS delivery of admin and fallback mail.
+  `FROM_EMAIL` must be a sender verified in Resend; the default test sender is
+  `onboarding@resend.dev`, which can only mail the account owner.
+- `MAIL_RELAY_URL` / `MAIL_RELAY_SECRET` — URL and shared secret for the
+  `mailrelay` Neon Function. The relay sends participant confirmation mail over
+  Gmail SMTP, which free Render services cannot reach directly. Deploy it with
+  `neon functions deploy mailrelay --src functions/mailrelay.ts --env SMTP_USER=... --env SMTP_PASS=... --env MAIL_RELAY_SECRET=...`.
+  Without these, participant mail falls back to Resend (and then to the admin
+  address when Resend rejects an unverified recipient).
+- `SMTP_EMAIL` / `SMTP_APP_PASSWORD` — Gmail account and App Password used by
+  the relay. This is not the account password.
 - `DATABASE_URL` — Postgres connection string (Neon's pooled URL works well).
   The `registrations` and `scores` tables are created automatically on startup
   from `server/schema.sql`.
@@ -172,11 +178,12 @@ the score and file endpoints reject requests without it.
 
 `render.yaml` defines a Render web service: `npm run build` then `npm start`,
 where `npm start` runs `server/index.js` and serves both the API and the built
-`dist/` site. Set `APP_URL`, `RESEND_API_KEY`, `FROM_EMAIL`, `DATABASE_URL`,
-`AWS_ENDPOINT_URL_S3`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`,
-`AWS_SECRET_ACCESS_KEY`, `OBJECT_STORAGE_BUCKET`, `SESSION_SECRET`, `ADMIN_USER`,
-and `ADMIN_PASSWORD` in the Render dashboard (they are `sync: false` in the
-blueprint). Free Render services block SMTP ports, so the `RESEND_API_KEY`
-path is required unless the service is upgraded to a paid instance. Keep event
-page URLs as `/hackathon.html` and `/ctf.html`.
+`dist/` site. Set `APP_URL`, `RESEND_API_KEY`, `FROM_EMAIL`, `MAIL_RELAY_URL`,
+`MAIL_RELAY_SECRET`, `DATABASE_URL`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION`,
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `OBJECT_STORAGE_BUCKET`,
+`SESSION_SECRET`, `ADMIN_USER`, and `ADMIN_PASSWORD` in the Render dashboard
+(they are `sync: false` in the blueprint). Free Render services block SMTP
+ports, so Gmail SMTP is routed through the `mailrelay` Neon Function while
+Resend handles admin and fallback mail. Keep event page URLs as
+`/hackathon.html` and `/ctf.html`.
 

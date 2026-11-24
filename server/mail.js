@@ -20,7 +20,35 @@ function client() {
   return transporter;
 }
 
-async function deliver(message) {
+async function relayDelivery(message) {
+  if (!config.mailRelayUrl || !config.mailRelaySecret) {
+    throw new Error("Mail relay is not configured.");
+  }
+  const response = await fetch(config.mailRelayUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-relay-secret": config.mailRelaySecret,
+    },
+    body: JSON.stringify({
+      to: message.to,
+      from: config.smtpUser || config.fromEmail,
+      subject: message.subject,
+      html: message.html,
+      text: message.text,
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.error || `Mail relay error (${response.status}).`);
+  }
+  return result;
+}
+
+async function deliver(message, { relay = false } = {}) {
+  if (relay) return relayDelivery(message);
+
   if (config.resendApiKey) {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -85,7 +113,7 @@ export async function sendVerificationMail({ to, eventName, uniqueId, token, det
   });
 }
 
-export async function sendConfirmationMail({ to, name, uniqueId, password, eventName }) {
+export async function sendConfirmationMail({ to, name, uniqueId, password, eventName, relay = false }) {
   const loginUrl = `${baseUrl()}/login.html`;
   await deliver({
     from: config.fromEmail,
@@ -104,7 +132,7 @@ export async function sendConfirmationMail({ to, name, uniqueId, password, event
         <p style="font-size:12px;color:#777">Keep this mail private. If you did not register, contact ${escapeHtml(config.adminEmail)}.</p>
       </div>
     `,
-  });
+  }, { relay });
 }
 
 function escapeHtml(value) {

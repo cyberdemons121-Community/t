@@ -224,9 +224,10 @@ async function deliverCredentials(row, details, password) {
     eventName: row.get("eventName") || row.get("event"),
   };
   const participantEmail = row.get("email");
+  const useRelay = Boolean(config.mailRelayUrl && config.mailRelaySecret);
 
   try {
-    await sendConfirmationMail({ ...payload, to: participantEmail });
+    await sendConfirmationMail({ ...payload, to: participantEmail, relay: useRelay });
     return { deliveredTo: participantEmail, fallback: false };
   } catch (error) {
     console.error(`Credential email to ${participantEmail} failed:`, error.message);
