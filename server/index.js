@@ -216,6 +216,30 @@ function uploadView(field, uploadedAt) {
   };
 }
 
+async function deliverCredentials(row, details, password) {
+  const payload = {
+    name: displayName(details),
+    uniqueId: row.get("uniqueId"),
+    password,
+    eventName: row.get("eventName") || row.get("event"),
+  };
+  const participantEmail = row.get("email");
+
+  try {
+    await sendConfirmationMail({ ...payload, to: participantEmail });
+    return { deliveredTo: participantEmail, fallback: false };
+  } catch (error) {
+    const adminEmail = config.adminEmail;
+    if (!adminEmail || adminEmail === participantEmail) throw error;
+    await sendConfirmationMail({
+      ...payload,
+      to: adminEmail,
+      name: `${payload.name} / ${participantEmail}`,
+    });
+    return { deliveredTo: adminEmail, fallback: true };
+  }
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
@@ -307,21 +331,30 @@ app.get(
       password = crypto.randomBytes(9).toString("base64url");
       passwordHash = await bcrypt.hash(password, 10);
     }
+    const previousStatus = row.get("status");
+    const previousHash = row.get("passwordHash");
+    const previousVerifiedAt = row.get("verifiedAt");
     await markVerified(row, passwordHash);
 
-    const details = JSON.parse(row.get("details") || "{}");
-    await sendConfirmationMail({
-      to: row.get("email"),
-      name: displayName(details),
-      uniqueId: row.get("uniqueId"),
-      password,
-      eventName: row.get("event"),
-    });
+    const details = parseJson(row.get("details"), {});
+    let delivery;
+    try {
+      delivery = await deliverCredentials(row, details, password);
+    } catch (mailError) {
+      row.set("status", previousStatus);
+      row.set("passwordHash", previousHash || "");
+      row.set("verifiedAt", previousVerifiedAt ? new Date(previousVerifiedAt).toISOString() : null);
+      await row.save();
+      throw mailError;
+    }
 
+    const fallbackNote = delivery.fallback
+      ? ` Participant delivery failed, so credentials were sent to the admin address (${delivery.deliveredTo}) for forwarding.`
+      : "";
     res.type("html").send(
       page(
         "Verified",
-        `Registration ${row.get("uniqueId")} is verified. Login credentials have been emailed to the participant.`,
+        `Registration ${row.get("uniqueId")} is verified. Login credentials were emailed to ${delivery.deliveredTo}.${fallbackNote}`,
       ),
     );
   }),
@@ -694,6 +727,34 @@ app.post(
   asyncRoute(async (_req, res) => {
     const cleared = await markNotificationsRead();
     res.json({ ok: true, cleared });
+  }),
+);
+
+app.post(
+  "/api/admin/users/:uniqueId/resend-credentials",
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    const row = await findByIdentifier(req.params.uniqueId);
+    if (!row) {
+      return res.status(404).json({ ok: false, error: "User not found." });
+    }
+
+    const details = parseJson(row.get("details"), {});
+    const password = crypto.randomBytes(9).toString("base64url");
+    const passwordHash = await bcrypt.hash(password, 10);
+    const delivery = await deliverCredentials(row, details, password);
+
+    row.set("passwordHash", passwordHash);
+    row.set("status", "verified");
+    row.set("verifiedAt", new Date().toISOString());
+    await row.save();
+
+    res.json({
+      ok: true,
+      password,
+      deliveredTo: delivery.deliveredTo,
+      fallback: delivery.fallback,
+    });
   }),
 );
 

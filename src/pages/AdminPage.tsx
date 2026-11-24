@@ -116,6 +116,12 @@ export function AdminPage() {
   const [selectedUserId, setSelectedUserId] = useState("");
   const [userActionBusy, setUserActionBusy] = useState("");
   const [userMessage, setUserMessage] = useState("");
+  const [credentialsResult, setCredentialsResult] = useState<{
+    uniqueId: string;
+    password: string;
+    deliveredTo: string;
+    fallback: boolean;
+  } | null>(null);
 
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -293,6 +299,7 @@ export function AdminPage() {
     setAuth("login");
     setPanel("overview");
     setUsers([]);
+    setCredentialsResult(null);
     setNotifications([]);
     setPpts([]);
     setScores([]);
@@ -319,6 +326,49 @@ export function AdminPage() {
       await loadUsers();
     } catch (error) {
       setUsersError(error instanceof Error ? error.message : `Could not ${action} user.`);
+    } finally {
+      setUserActionBusy("");
+    }
+  };
+
+  const onResendCredentials = async (user: AdminUser) => {
+    if (
+      !window.confirm(
+        `Generate new credentials for ${user.name || user.uniqueId} and email them? This invalidates the previous password.`,
+      )
+    ) return;
+
+    setUserActionBusy(user.uniqueId);
+    setUserMessage("");
+    setCredentialsResult(null);
+    try {
+      const response = await fetch(
+        `/api/admin/users/${encodeURIComponent(user.uniqueId)}/resend-credentials`,
+        { method: "POST" },
+      );
+      const result = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        password?: string;
+        deliveredTo?: string;
+        fallback?: boolean;
+        error?: string;
+      };
+      if (!response.ok || !result.ok) throw new Error(result.error || "Could not resend credentials.");
+      const deliveredTo = result.deliveredTo || "";
+      setCredentialsResult({
+        uniqueId: user.uniqueId,
+        password: result.password || "",
+        deliveredTo,
+        fallback: Boolean(result.fallback),
+      });
+      setUserMessage(
+        result.fallback
+          ? `Email to ${user.email} was rejected. Credentials were sent to ${deliveredTo} instead — copy the password below to forward manually.`
+          : `New credentials emailed to ${deliveredTo}.`,
+      );
+      await loadUsers();
+    } catch (error) {
+      setUsersError(error instanceof Error ? error.message : "Could not resend credentials.");
     } finally {
       setUserActionBusy("");
     }
@@ -653,6 +703,31 @@ export function AdminPage() {
                 {userMessage}
               </p>
             ) : null}
+            {credentialsResult ? (
+              <div className="mt-5 border border-ice/40 bg-ice/[0.06] p-4">
+                <p className="field-label">New credentials for {credentialsResult.uniqueId}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <code className="break-all border border-white/10 bg-ink/60 px-3 py-2 font-mono text-xs text-white">
+                    {credentialsResult.password}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(
+                        `Unique ID: ${credentialsResult.uniqueId}\nPassword: ${credentialsResult.password}`,
+                      );
+                    }}
+                    className={smallButton}
+                  >
+                    Copy
+                  </button>
+                </div>
+                <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-fog">
+                  Delivered to {credentialsResult.deliveredTo}
+                  {credentialsResult.fallback ? " (admin fallback)" : ""}
+                </p>
+              </div>
+            ) : null}
             {usersError ? (
               <p role="alert" className="mt-5 border border-blood/40 bg-blood/5 p-4 text-sm text-blood-bright">
                 {usersError}
@@ -736,6 +811,14 @@ export function AdminPage() {
                           <div className="flex flex-wrap gap-2">
                             <button type="button" onClick={() => setSelectedUserId(user.uniqueId)} className={smallButton}>
                               Details
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void onResendCredentials(user)}
+                              disabled={userActionBusy === user.uniqueId}
+                              className={smallButton}
+                            >
+                              {userActionBusy === user.uniqueId ? "..." : "Resend"}
                             </button>
                             <button
                               type="button"
@@ -852,6 +935,14 @@ export function AdminPage() {
                 </div>
 
                 <div className="mt-8 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void onResendCredentials(selectedUser)}
+                    disabled={userActionBusy === selectedUser.uniqueId}
+                    className={smallButton}
+                  >
+                    {userActionBusy === selectedUser.uniqueId ? "Sending..." : "Resend credentials"}
+                  </button>
                   <button type="button" onClick={() => void onToggleBlock(selectedUser)} className={smallButton}>
                     {selectedUser.blocked ? "Unblock user" : "Block user"}
                   </button>

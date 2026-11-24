@@ -90,7 +90,10 @@ index.html
 - Only a SHA-256 hash of the verification token is stored. Clicking **Mark
   verified & send credentials** in that mail calls `/api/verify?token=...`, marks
   the row verified, generates a one-time password, stores only its bcrypt hash,
-  and emails the participant their unique ID + password.
+  and emails the participant their unique ID + password. If Resend rejects the
+  participant address (for example while using the `resend.dev` test sender),
+  the mail falls back to `ADMIN_EMAIL` so the credentials are not lost, and the
+  verification state is rolled back only when every delivery attempt fails.
 - `POST /api/login` checks those credentials against the verified database row;
   `src/pages/LoginPage.tsx` uses it for sign-in.
 - The home **Join** form (`src/components/Join.tsx`) is still mailto-only.
@@ -151,8 +154,8 @@ console opens on an overview with registration counts and tabs for every
 management area:
 
 - **Users** — search/filter all registrations, inspect every stored detail and
-  uploaded file, block/unblock access, or permanently delete a user and their
-  files. Blocked users cannot log in to `/dashboard.html`.
+  uploaded file, resend fresh credentials, block/unblock access, or permanently
+  delete a user and their files. Blocked users cannot log in to `/dashboard.html`.
 - **Notifications** — pending registrations waiting for review, with a live
   unread badge and a "Mark all read" action. A registration leaves this panel
   once it is verified or dismissed.
