@@ -32,3 +32,10 @@ CREATE TABLE IF NOT EXISTS scores (
   points     NUMERIC NOT NULL DEFAULT 0,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Logout revocations are persisted so a copied cookie cannot be reused after
+-- logout, even if the server restarts.
+CREATE TABLE IF NOT EXISTS revoked_sessions (
+  jti         TEXT PRIMARY KEY,
+  revoked_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

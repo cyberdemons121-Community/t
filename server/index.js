@@ -13,6 +13,8 @@ import {
   findByIdentifier,
   findStoredUpload,
   initDb,
+  loadRevokedSessionIds,
+  revokeSessionId,
   listCtfTeams,
   listNotifications,
   listPptUploads,
@@ -117,7 +119,7 @@ function readSession(req, cookieName) {
   }
 }
 
-function revokeSession(req, cookieName) {
+async function revokeSession(req, cookieName) {
   const match = (req.headers.cookie || "").match(
     new RegExp(`(?:^|;\\s*)${cookieName}=([^;]+)`),
   );
@@ -125,7 +127,10 @@ function revokeSession(req, cookieName) {
   if (!body) return;
   try {
     const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-    if (payload.jti) revokedSessionIds.add(payload.jti);
+    if (payload.jti) {
+      revokedSessionIds.add(payload.jti);
+      await revokeSessionId(payload.jti);
+    }
   } catch {
     // Ignore malformed cookies; the logout still clears the browser cookie.
   }
@@ -658,11 +663,11 @@ app.get(
   }),
 );
 
-app.post("/api/logout", (req, res) => {
-  revokeSession(req, "cd_session");
+app.post("/api/logout", asyncRoute(async (req, res) => {
+  await revokeSession(req, "cd_session");
   res.clearCookie("cd_session", { path: "/" });
   res.json({ ok: true });
-});
+}));
 
 app.post("/api/admin/login", (req, res) => {
   const user = String(req.body?.user || req.body?.username || "");
@@ -690,11 +695,11 @@ app.get("/api/admin/me", requireAdmin, (_req, res) => {
   res.json({ ok: true });
 });
 
-app.post("/api/admin/logout", (req, res) => {
-  revokeSession(req, "cd_admin");
+app.post("/api/admin/logout", asyncRoute(async (req, res) => {
+  await revokeSession(req, "cd_admin");
   res.clearCookie("cd_admin", { path: "/" });
   res.json({ ok: true });
-});
+}));
 
 app.get(
   "/api/admin/users",
@@ -938,6 +943,7 @@ app.use(express.static(distDir));
 app.get("*", (_req, res) => res.sendFile(path.join(distDir, "index.html")));
 
 await initDb();
+for (const jti of await loadRevokedSessionIds()) revokedSessionIds.add(jti);
 
 app.listen(config.port, () => {
   console.log(`CyberDemons API + site listening on port ${config.port}`);

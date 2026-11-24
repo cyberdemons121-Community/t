@@ -113,6 +113,18 @@ export async function initDb() {
   await pool.query(schema);
 }
 
+export async function loadRevokedSessionIds() {
+  const { rows } = await pool.query("SELECT jti FROM revoked_sessions");
+  return rows.map((row) => row.jti);
+}
+
+export async function revokeSessionId(jti) {
+  await pool.query(
+    "INSERT INTO revoked_sessions (jti) VALUES ($1) ON CONFLICT (jti) DO NOTHING",
+    [jti],
+  );
+}
+
 export async function appendRegistration(record) {
   await pool.query(
     `INSERT INTO registrations (

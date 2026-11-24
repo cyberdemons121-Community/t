@@ -154,7 +154,7 @@ Only verified, unblocked sessions can read or change this data. Password hashes
 stay server-side and are never returned to the browser. Login cookies are
 httpOnly and persist across browser restarts; sessions do not expire on a timer
 and stay active until Logout is used. Logout clears the cookie and revokes the
-signed token server-side.
+signed token in Postgres, so a copied cookie cannot be reused after logout.
 
 ## Admin dashboard
 
@@ -177,7 +177,7 @@ management area:
 Admin sessions use an httpOnly `cd_admin` cookie signed with `SESSION_SECRET`;
 the score and file endpoints reject requests without it. Like participant
 sessions, the admin session stays active until Sign out is used, which also
-revokes the token server-side.
+revokes the token in Postgres.
 
 ## Deploying
 
