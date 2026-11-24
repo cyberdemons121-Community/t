@@ -76,13 +76,15 @@ function displayName(details) {
   );
 }
 
-const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
-const ADMIN_SESSION_MAX_AGE = 12 * 60 * 60 * 1000;
+// Sessions stay valid until the user explicitly logs out. The long cookie age
+// only keeps the browser cookie across restarts; the signed token has no expiry.
+const SESSION_COOKIE_MAX_AGE = 10 * 365 * 24 * 60 * 60 * 1000;
+const revokedSessionIds = new Set();
 const sessionSecret =
   config.sessionSecret || `${config.sheetId}:${config.smtpAppPassword}`;
 
 function signSession(payload) {
-  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const body = Buffer.from(JSON.stringify({ ...payload, jti: crypto.randomUUID() })).toString("base64url");
   const signature = crypto
     .createHmac("sha256", sessionSecret)
     .update(body)
@@ -108,10 +110,24 @@ function readSession(req, cookieName) {
 
   try {
     const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-    if (!payload.expires || payload.expires < Date.now()) return undefined;
+    if (payload.jti && revokedSessionIds.has(payload.jti)) return undefined;
     return payload;
   } catch {
     return undefined;
+  }
+}
+
+function revokeSession(req, cookieName) {
+  const match = (req.headers.cookie || "").match(
+    new RegExp(`(?:^|;\\s*)${cookieName}=([^;]+)`),
+  );
+  const body = String(match?.[1] || "").split(".")[0];
+  if (!body) return;
+  try {
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    if (payload.jti) revokedSessionIds.add(payload.jti);
+  } catch {
+    // Ignore malformed cookies; the logout still clears the browser cookie.
   }
 }
 
@@ -125,7 +141,7 @@ function currentAdmin(req) {
   return payload?.admin === true ? payload : undefined;
 }
 
-function sessionCookieOptions(maxAge = SESSION_MAX_AGE) {
+function sessionCookieOptions(maxAge = SESSION_COOKIE_MAX_AGE) {
   return {
     httpOnly: true,
     sameSite: "lax",
@@ -568,10 +584,7 @@ app.post(
       return res.status(401).json({ ok: false, error: "Access pending or credentials not recognized." });
     }
 
-    const sessionToken = signSession({
-      uniqueId: row.get("uniqueId"),
-      expires: Date.now() + SESSION_MAX_AGE,
-    });
+    const sessionToken = signSession({ uniqueId: row.get("uniqueId") });
     res.cookie("cd_session", sessionToken, sessionCookieOptions());
 
     res.json({
@@ -645,7 +658,8 @@ app.get(
   }),
 );
 
-app.post("/api/logout", (_req, res) => {
+app.post("/api/logout", (req, res) => {
+  revokeSession(req, "cd_session");
   res.clearCookie("cd_session", { path: "/" });
   res.json({ ok: true });
 });
@@ -668,11 +682,7 @@ app.post("/api/admin/login", (req, res) => {
     return res.status(401).json({ ok: false, error: "Incorrect admin username or password." });
   }
 
-  res.cookie(
-    "cd_admin",
-    signSession({ admin: true, expires: Date.now() + ADMIN_SESSION_MAX_AGE }),
-    sessionCookieOptions(ADMIN_SESSION_MAX_AGE),
-  );
+  res.cookie("cd_admin", signSession({ admin: true }), sessionCookieOptions());
   res.json({ ok: true });
 });
 
@@ -680,7 +690,8 @@ app.get("/api/admin/me", requireAdmin, (_req, res) => {
   res.json({ ok: true });
 });
 
-app.post("/api/admin/logout", (_req, res) => {
+app.post("/api/admin/logout", (req, res) => {
+  revokeSession(req, "cd_admin");
   res.clearCookie("cd_admin", { path: "/" });
   res.json({ ok: true });
 });
