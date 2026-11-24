@@ -146,6 +146,13 @@ export function Header({ page }: HeaderProps) {
 
         <div className="hidden items-center gap-3 lg:flex">
           <a
+            href="/dashboard.html"
+            aria-current={page === "dashboard" ? "page" : undefined}
+            className="inline-flex items-center justify-center border border-white/20 px-4 py-2.5 font-mono text-[11px] font-medium uppercase tracking-[0.2em] text-fog transition-all duration-300 hover:-translate-y-0.5 hover:border-ice/60 hover:text-ice"
+          >
+            Dashboard
+          </a>
+          <a
             href="/login.html"
             aria-current={page === "login" ? "page" : undefined}
             className="inline-flex items-center justify-center gap-2 border border-white/20 px-4 py-2.5 font-mono text-[11px] font-medium uppercase tracking-[0.2em] text-white transition-all duration-300 hover:-translate-y-0.5 hover:border-ice/60 hover:text-ice"
@@ -207,6 +214,9 @@ export function Header({ page }: HeaderProps) {
             </a>
           ))}
           <div className="mt-5 grid gap-3">
+            <a href="/dashboard.html" onClick={() => setOpen(false)} className={`${buttonGhost} w-full`}>
+              Dashboard
+            </a>
             <a href="/login.html" onClick={() => setOpen(false)} className={`${buttonGhost} w-full`}>
               Login
             </a>

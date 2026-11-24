@@ -13,6 +13,7 @@ export const config = {
   serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "",
   privateKey: process.env.GOOGLE_PRIVATE_KEY || "",
   sessionSecret: process.env.SESSION_SECRET || "",
+  adminUser: process.env.ADMIN_USER || "",
   adminPassword: process.env.ADMIN_PASSWORD || "",
 };
 

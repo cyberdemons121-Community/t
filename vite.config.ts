@@ -11,6 +11,7 @@ export default defineConfig({
         hackathonUpdates: "hackathon-updates.html",
         ctf: "ctf.html",
         login: "login.html",
+        dashboard: "dashboard.html",
         admin: "admin.html",
       },
     },

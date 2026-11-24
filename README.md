@@ -36,7 +36,10 @@ The dev server prints a local URL (default `http://localhost:5173`).
 - `/hackathon.html` — CyberDemons Hackathon 2026 (PPT submissions close
   **23 December 2026**, event day **26 December 2026**).
 - `/ctf.html` — CyberDemons CTF 2026 (event day **27 December 2026**).
-- `/admin.html` — Admin dashboard: hackathon PPT submissions and CTF scoreboard.
+- `/dashboard.html` — Participant dashboard: stored registration details,
+  credentials status, uploads, and CTF score.
+- `/admin.html` — Admin dashboard: users and details, new-user notifications,
+  hackathon PPT submissions, and CTF scoreboard.
 
 Page selection is driven by `#root[data-page]` in each HTML entry and wired as
 Vite/Rollup inputs in `vite.config.ts`. Event links use absolute paths
@@ -79,13 +82,15 @@ index.html
 
 - Event registration forms (`src/components/RegistrationForm.tsx`) POST to the
   Express API at `/api/register` (multipart, including uploads).
-- The API appends each registration to a Google Sheet, then emails a verification
-  link with the submitted details and attachments to `ADMIN_EMAIL`
+- The API inserts each registration into Postgres (`registrations` table), stores
+  the PPT and payment screenshot in S3-compatible object storage, then emails a
+  verification link with the submitted details and attachments to `ADMIN_EMAIL`
   (`cyberdemons121@gmail.com` by default).
-- Clicking **Mark verified & send credentials** in that mail calls
-  `/api/verify?token=...`, marks the row verified, generates a unique password,
+- Only a SHA-256 hash of the verification token is stored. Clicking **Mark
+  verified & send credentials** in that mail calls `/api/verify?token=...`, marks
+  the row verified, generates a one-time password, stores only its bcrypt hash,
   and emails the participant their unique ID + password.
-- `POST /api/login` checks those credentials against the verified sheet row;
+- `POST /api/login` checks those credentials against the verified database row;
   `src/pages/LoginPage.tsx` uses it for sign-in.
 - The home **Join** form (`src/components/Join.tsx`) is still mailto-only.
 
@@ -105,30 +110,38 @@ Copy `.env.example` to `.env` and fill in:
   in Resend. Without this key, mail falls back to Gmail SMTP using
   `SMTP_EMAIL` and `SMTP_APP_PASSWORD` (a Gmail App Password, not the account
   password). `FROM_EMAIL` defaults to `SMTP_EMAIL`.
-- `GOOGLE_SHEET_ID` — the registration spreadsheet. Authentication uses
-  Application Default Credentials (ADC): run `gcloud auth application-default
-  login` locally with the Google account that has Editor access to the sheet,
-  and enable the Sheets API. On hosting without ADC (for example Render), set
-  `GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_PRIVATE_KEY` instead; the private
-  key may include literal `\n` characters. A `Registrations` tab and header row
-  are created automatically.
+- `DATABASE_URL` — Postgres connection string (Neon's pooled URL works well).
+  The `registrations` and `scores` tables are created automatically on startup
+  from `server/schema.sql`.
+- `AWS_ENDPOINT_URL_S3`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`,
+  `AWS_SECRET_ACCESS_KEY` — AWS-standard S3 credentials injected by Neon for the
+  `uploads` bucket declared in `neon.ts`. `OBJECT_STORAGE_BUCKET` defaults to
+  `uploads`. Files are no longer kept in the local `uploads/` folder, so they
+  survive redeploys.
 - `APP_URL` — public URL of this service (used in verification/login links).
 - `ADMIN_EMAIL` — address that receives verification mail.
-- `ADMIN_PASSWORD` — password for `/admin.html`. Without it the dashboard login is disabled.
+- `ADMIN_USER`, `ADMIN_PASSWORD` — username and password for `/admin.html`. Both are required; admin login is disabled if either is missing.
 
 Local dev: run `npm run server` and `npm run dev` in separate terminals; Vite
 proxies `/api` to port 3001.
 
 ## Admin dashboard
 
-Open `/admin.html` and sign in with `ADMIN_PASSWORD`. The dashboard asks which
-event to review:
+Open `/admin.html` and sign in with `ADMIN_USER` and `ADMIN_PASSWORD`. The
+console opens on an overview with registration counts and tabs for every
+management area:
 
+- **Users** — search/filter all registrations, inspect every stored detail and
+  uploaded file, block/unblock access, or permanently delete a user and their
+  files. Blocked users cannot log in to `/dashboard.html`.
+- **Notifications** — pending registrations waiting for review, with a live
+  unread badge and a "Mark all read" action. A registration leaves this panel
+  once it is verified or dismissed.
 - **Hackathon** — lists every PPT uploaded by participants (at registration or
   later from the submission portal), with download links to the original files.
 - **CTF** — scoreboard ranked by points, highest first. Pick a registered team
-  (or type a new one), enter points, and save; a `Scores` tab is created in the
-  registration spreadsheet automatically.
+  (or type a new one), enter points, and save; scores live in the `scores`
+  Postgres table.
 
 Admin sessions use an httpOnly `cd_admin` cookie signed with `SESSION_SECRET`;
 the score and file endpoints reject requests without it.
@@ -137,9 +150,10 @@ the score and file endpoints reject requests without it.
 
 `render.yaml` defines a Render web service: `npm run build` then `npm start`,
 where `npm start` runs `server/index.js` and serves both the API and the built
-`dist/` site. Set `APP_URL`, `RESEND_API_KEY`, `FROM_EMAIL`, `GOOGLE_SHEET_ID`,
-`GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`, `SESSION_SECRET`, and
-`ADMIN_PASSWORD` in the Render dashboard (they are `sync: false` in the
+`dist/` site. Set `APP_URL`, `RESEND_API_KEY`, `FROM_EMAIL`, `DATABASE_URL`,
+`AWS_ENDPOINT_URL_S3`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY`, `OBJECT_STORAGE_BUCKET`, `SESSION_SECRET`, `ADMIN_USER`,
+and `ADMIN_PASSWORD` in the Render dashboard (they are `sync: false` in the
 blueprint). Free Render services block SMTP ports, so the `RESEND_API_KEY`
 path is required unless the service is upgraded to a paid instance. Keep event
 page URLs as `/hackathon.html` and `/ctf.html`.

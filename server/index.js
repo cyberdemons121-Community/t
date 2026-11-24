@@ -1,6 +1,5 @@
 import "dotenv/config";
 import crypto from "node:crypto";
-import fs from "node:fs";
 import path from "node:path";
 import express from "express";
 import multer from "multer";
@@ -13,12 +12,19 @@ import {
   findByToken,
   findByIdentifier,
   findStoredUpload,
+  initDb,
   listCtfTeams,
+  listNotifications,
   listPptUploads,
+  listRegistrations,
   listScores,
+  markNotificationsRead,
   markVerified,
+  setUserBlocked,
+  deleteRegistration,
   upsertScore,
-} from "./sheets.js";
+} from "./db.js";
+import { deleteObject, getObject, putObject } from "./storage.js";
 import { sendConfirmationMail, sendVerificationMail } from "./mail.js";
 
 const app = express();
@@ -70,7 +76,6 @@ function displayName(details) {
   );
 }
 
-const uploadDir = path.join(process.cwd(), "uploads");
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 const ADMIN_SESSION_MAX_AGE = 12 * 60 * 60 * 1000;
 const sessionSecret =
@@ -170,16 +175,13 @@ app.post(
     const eventType = String(eventId || "").toLowerCase() === "ctf" ? "ctf" : "hackathon";
     const id = uniqueId();
     const token = crypto.randomBytes(24).toString("hex");
-    const password = crypto.randomBytes(9).toString("base64url");
-    const passwordHash = await bcrypt.hash(password, 10);
     const to = String(details.email).trim();
 
     const storedUploads = [];
     await registrationStep("upload storage", async () => {
-      await fs.promises.mkdir(uploadDir, { recursive: true });
       for (const file of files) {
         const storedName = `${id}-${crypto.randomBytes(4).toString("hex")}-${safeFileName(file.originalname)}`;
-        await fs.promises.writeFile(path.join(uploadDir, storedName), file.buffer);
+        await putObject(storedName, file.buffer, file.mimetype);
         storedUploads.push({ field: file.fieldname, name: file.originalname, storedName });
       }
     });
@@ -197,8 +199,6 @@ app.post(
       name: displayName(details),
       email: to,
       token,
-      password,
-      passwordHash,
       phone: String(details.phone || "").trim(),
       registeredFor: eventType === "ctf" ? "CTF" : "Hackathon",
       details,
@@ -244,7 +244,6 @@ app.get(
     if (!password || !passwordHash) {
       password = crypto.randomBytes(9).toString("base64url");
       passwordHash = await bcrypt.hash(password, 10);
-      row.set("password", password);
     }
     await markVerified(row, passwordHash);
 
@@ -291,16 +290,13 @@ app.post(
 
     const pptFile = (req.files?.ppt || [])[0];
     if (pptFile) {
-      await fs.promises.mkdir(uploadDir, { recursive: true });
       const storedName = `${row.get("uniqueId")}-${crypto.randomBytes(4).toString("hex")}-${safeFileName(pptFile.originalname)}`;
-      await fs.promises.writeFile(path.join(uploadDir, storedName), pptFile.buffer);
+      await putObject(storedName, pptFile.buffer, pptFile.mimetype);
 
       const current = Array.isArray(uploads) ? uploads : [];
       const previous = current.find((file) => file.field === "ppt");
       if (previous?.storedName) {
-        await fs.promises
-          .unlink(path.join(uploadDir, path.basename(previous.storedName)))
-          .catch(() => {});
+        await deleteObject(path.basename(previous.storedName)).catch(() => {});
       }
 
       row.set(
@@ -332,6 +328,7 @@ app.post(
       const hash = candidate.get("passwordHash") || "";
       if (
         candidate.get("status") === "verified" &&
+        !candidate.get("blocked") &&
         hash &&
         (await bcrypt.compare(String(password), hash))
       ) {
@@ -374,6 +371,8 @@ app.get(
     }
 
     const uploads = parseJson(row.get("uploads"), []);
+    const scores = await listScores();
+    const score = scores.find((item) => item.uniqueId === row.get("uniqueId"));
     res.json({
       ok: true,
       uniqueId: row.get("uniqueId"),
@@ -392,20 +391,32 @@ app.get(
             url: `/api/files/${encodeURIComponent(file.field)}`,
           }))
         : [],
+      score: score ? Number(score.points) : null,
     });
   }),
 );
 
+app.post("/api/logout", (_req, res) => {
+  res.clearCookie("cd_session", { path: "/" });
+  res.json({ ok: true });
+});
+
 app.post("/api/admin/login", (req, res) => {
+  const user = String(req.body?.user || req.body?.username || "");
   const password = String(req.body?.password || "");
-  if (!config.adminPassword || !password) {
+  if (!config.adminUser || !config.adminPassword || !user || !password) {
     return res.status(401).json({ ok: false, error: "Admin access is not configured." });
   }
 
-  const provided = crypto.createHash("sha256").update(password).digest();
-  const expected = crypto.createHash("sha256").update(config.adminPassword).digest();
-  if (!crypto.timingSafeEqual(provided, expected)) {
-    return res.status(401).json({ ok: false, error: "Incorrect admin password." });
+  const providedUser = crypto.createHash("sha256").update(user).digest();
+  const expectedUser = crypto.createHash("sha256").update(config.adminUser).digest();
+  const providedPassword = crypto.createHash("sha256").update(password).digest();
+  const expectedPassword = crypto.createHash("sha256").update(config.adminPassword).digest();
+  if (
+    !crypto.timingSafeEqual(providedUser, expectedUser) ||
+    !crypto.timingSafeEqual(providedPassword, expectedPassword)
+  ) {
+    return res.status(401).json({ ok: false, error: "Incorrect admin username or password." });
   }
 
   res.cookie(
@@ -424,6 +435,79 @@ app.post("/api/admin/logout", (_req, res) => {
   res.clearCookie("cd_admin", { path: "/" });
   res.json({ ok: true });
 });
+
+app.get(
+  "/api/admin/users",
+  requireAdmin,
+  asyncRoute(async (_req, res) => {
+    const users = await listRegistrations();
+    res.json({
+      ok: true,
+      users: users.map((user) => ({
+        ...user,
+        uploads: user.uploads.map((file) => ({
+          ...file,
+          url: `/api/admin/files/${encodeURIComponent(file.storedName)}`,
+        })),
+      })),
+    });
+  }),
+);
+
+app.get(
+  "/api/admin/notifications",
+  requireAdmin,
+  asyncRoute(async (_req, res) => {
+    const notifications = await listNotifications();
+    res.json({
+      ok: true,
+      unreadCount: notifications.length,
+      notifications: notifications.map((user) => ({
+        uniqueId: user.uniqueId,
+        name: user.name,
+        email: user.email,
+        event: user.eventName || user.event,
+        registeredFor: user.event === "ctf" ? "CTF" : "Hackathon",
+        createdAt: user.createdAt,
+      })),
+    });
+  }),
+);
+
+app.post(
+  "/api/admin/notifications/read",
+  requireAdmin,
+  asyncRoute(async (_req, res) => {
+    const cleared = await markNotificationsRead();
+    res.json({ ok: true, cleared });
+  }),
+);
+
+app.post(
+  "/api/admin/users/:uniqueId/block",
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    const blocked = Boolean(req.body?.blocked);
+    const updated = await setUserBlocked(req.params.uniqueId, blocked);
+    if (!updated) {
+      return res.status(404).json({ ok: false, error: "User not found." });
+    }
+    res.json({ ok: true, blocked });
+  }),
+);
+
+app.delete(
+  "/api/admin/users/:uniqueId",
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    const storedNames = await deleteRegistration(req.params.uniqueId);
+    if (!storedNames) {
+      return res.status(404).json({ ok: false, error: "User not found." });
+    }
+    await Promise.allSettled(storedNames.map((name) => deleteObject(name)));
+    res.json({ ok: true });
+  }),
+);
 
 app.get(
   "/api/admin/hackathon/ppts",
@@ -450,9 +534,9 @@ app.get(
       return res.status(404).json({ ok: false, error: "File not found." });
     }
 
-    const filePath = path.join(uploadDir, storedName);
+    let object;
     try {
-      await fs.promises.access(filePath);
+      object = await getObject(storedName);
     } catch {
       return res.status(404).json({ ok: false, error: "File not found." });
     }
@@ -461,8 +545,8 @@ app.get(
       "Content-Disposition",
       `attachment; filename*=UTF-8''${encodeURIComponent(file.name || storedName)}`,
     );
-    res.type(path.extname(file.name || storedName) || "application/octet-stream");
-    fs.createReadStream(filePath).pipe(res);
+    res.type(object.contentType || path.extname(file.name || storedName) || "application/octet-stream");
+    res.send(object.body);
   }),
 );
 
@@ -527,9 +611,9 @@ app.get(
       return res.status(404).json({ ok: false, error: "File not found." });
     }
 
-    const filePath = path.join(uploadDir, path.basename(file.storedName));
+    let object;
     try {
-      await fs.promises.access(filePath);
+      object = await getObject(path.basename(file.storedName));
     } catch {
       return res.status(404).json({ ok: false, error: "File not found." });
     }
@@ -538,8 +622,8 @@ app.get(
       "Content-Disposition",
       `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
     );
-    res.type(path.extname(file.name) || "application/octet-stream");
-    fs.createReadStream(filePath).pipe(res);
+    res.type(object.contentType || path.extname(file.name) || "application/octet-stream");
+    res.send(object.body);
   }),
 );
 
@@ -561,6 +645,8 @@ app.use((error, _req, res, _next) => {
 const distDir = path.join(process.cwd(), "dist");
 app.use(express.static(distDir));
 app.get("*", (_req, res) => res.sendFile(path.join(distDir, "index.html")));
+
+await initDb();
 
 app.listen(config.port, () => {
   console.log(`CyberDemons API + site listening on port ${config.port}`);

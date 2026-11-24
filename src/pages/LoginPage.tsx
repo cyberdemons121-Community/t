@@ -40,9 +40,7 @@ export function LoginPage() {
       setName(data.name || "operator");
       setMessage("Access verified. Redirecting...");
       setStatus("ok");
-      window.location.assign(
-        data.event === "ctf" ? site.ctfUrl : "/hackathon-updates.html",
-      );
+      window.location.assign("/dashboard.html");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Login failed.");
       setStatus("error");
