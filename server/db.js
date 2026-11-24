@@ -186,7 +186,7 @@ export async function listPptUploads(event) {
         status: record.status,
         name: upload.name,
         storedName: upload.storedName,
-        submittedAt: record.created_at,
+        submittedAt: upload.uploadedAt || record.created_at,
       }));
   });
 }
@@ -255,7 +255,12 @@ function publicUser(record) {
     verifiedAt: record.verified_at ? new Date(record.verified_at).toISOString() : null,
     createdAt: record.created_at ? new Date(record.created_at).toISOString() : null,
     details: record.details || {},
-    uploads: uploads.map((file) => ({ field: file.field, name: file.name, storedName: file.storedName })),
+    uploads: uploads.map((file) => ({
+      field: file.field,
+      name: file.name,
+      storedName: file.storedName,
+      uploadedAt: file.uploadedAt || null,
+    })),
   };
 }
 

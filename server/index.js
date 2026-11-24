@@ -154,6 +154,68 @@ function parseJson(value, fallback) {
   }
 }
 
+function httpError(status, message) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+function cleanString(value, maxLength = 160) {
+  return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+}
+
+const PROFILE_FIELDS = [
+  "captain",
+  "teamName",
+  "phone",
+  "college",
+  "city",
+  "experience",
+  "repo",
+];
+const UPLOAD_FIELDS = new Set(["ppt", "paymentScreenshot", "profilePic"]);
+const MAX_TEAM_MEMBERS = 10;
+
+function normalizeTeamMembers(value) {
+  if (!Array.isArray(value)) throw httpError(400, "Team members must be a list.");
+  if (value.length > MAX_TEAM_MEMBERS) {
+    throw httpError(400, `A team can have at most ${MAX_TEAM_MEMBERS} members plus the captain.`);
+  }
+  return value.map((entry, index) => {
+    const member = entry && typeof entry === "object" ? entry : {};
+    const name = cleanString(member.name, 80);
+    if (!name) throw httpError(400, `Member ${index + 1} needs a name.`);
+    const email = cleanString(member.email, 160);
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw httpError(400, `Member ${index + 1} has an invalid email.`);
+    }
+    return {
+      name,
+      role: cleanString(member.role, 80),
+      email,
+      phone: cleanString(member.phone, 40),
+      college: cleanString(member.college, 160),
+    };
+  });
+}
+
+async function currentUser(req) {
+  const session = currentSession(req);
+  if (!session) return undefined;
+  const row = await findByIdentifier(session.uniqueId);
+  if (!row || row.get("blocked") || row.get("status") !== "verified") return undefined;
+  return row;
+}
+
+function uploadView(field, uploadedAt) {
+  return {
+    field,
+    url: `/api/files/${encodeURIComponent(field)}`,
+    viewUrl: `/api/files/${encodeURIComponent(field)}?inline=1`,
+    uploadedAt: uploadedAt || null,
+  };
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
@@ -269,14 +331,9 @@ app.post(
   "/api/submission",
   upload.fields([{ name: "ppt", maxCount: 1 }]),
   asyncRoute(async (req, res) => {
-    const session = currentSession(req);
-    if (!session) {
-      return res.status(401).json({ ok: false, error: "Not signed in." });
-    }
-
-    const row = await findByIdentifier(session.uniqueId);
+    const row = await currentUser(req);
     if (!row) {
-      return res.status(401).json({ ok: false, error: "Session expired." });
+      return res.status(401).json({ ok: false, error: "Sign in again to update your submission." });
     }
 
     const details = parseJson(row.get("details"), {});
@@ -303,13 +360,148 @@ app.post(
         "uploads",
         JSON.stringify([
           ...current.filter((file) => file.field !== "ppt"),
-          { field: "ppt", name: pptFile.originalname, storedName },
+          {
+            field: "ppt",
+            name: pptFile.originalname,
+            storedName,
+            uploadedAt: new Date().toISOString(),
+          },
         ]),
       );
-      row.set("ppt", pptFile.originalname);
+      details.ppt = pptFile.originalname;
+      details.pptUpdatedAt = new Date().toISOString();
+      details.updatedAt = details.pptUpdatedAt;
     }
 
-    await row.save({ raw: true });
+    if (repo !== undefined) details.updatedAt = new Date().toISOString();
+    row.set("details", JSON.stringify(details));
+    await row.save();
+    res.json({ ok: true });
+  }),
+);
+
+app.patch(
+  "/api/me/profile",
+  asyncRoute(async (req, res) => {
+    const row = await currentUser(req);
+    if (!row) {
+      return res.status(401).json({ ok: false, error: "Sign in again to update your profile." });
+    }
+
+    const details = parseJson(row.get("details"), {});
+    const body = req.body || {};
+    for (const field of PROFILE_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(body, field)) {
+        details[field] = cleanString(body[field], field === "repo" ? 500 : 160);
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "teamMembers")) {
+      details.teamMembers = normalizeTeamMembers(body.teamMembers);
+      details.teamSize = `${details.teamMembers.length + 1} (${
+        details.teamMembers.length ? "team" : "solo"
+      })`;
+      row.set("teamSize", details.teamSize);
+    }
+
+    details.updatedAt = new Date().toISOString();
+    if (details.captain) {
+      row.set("captainName", details.captain);
+      row.set("name", details.captain);
+    }
+    if (details.teamName) row.set("teamName", details.teamName);
+    if (details.phone) row.set("phone", details.phone);
+    row.set("details", JSON.stringify(details));
+    await row.save();
+    res.json({ ok: true, details });
+  }),
+);
+
+app.post(
+  "/api/me/uploads",
+  upload.fields([
+    { name: "ppt", maxCount: 1 },
+    { name: "paymentScreenshot", maxCount: 1 },
+    { name: "profilePic", maxCount: 1 },
+  ]),
+  asyncRoute(async (req, res) => {
+    const row = await currentUser(req);
+    if (!row) {
+      return res.status(401).json({ ok: false, error: "Sign in again to upload files." });
+    }
+
+    const incoming = Object.entries(req.files || {})
+      .map(([field, files]) => ({ field, file: files?.[0] }))
+      .filter((entry) => Boolean(entry.file));
+    if (!incoming.length) throw httpError(400, "Choose a file to upload.");
+
+    for (const { field, file } of incoming) {
+      if (!UPLOAD_FIELDS.has(field)) throw httpError(400, "Unsupported upload type.");
+      if ((field === "profilePic" || field === "paymentScreenshot") && !/^image\//.test(file.mimetype)) {
+        throw httpError(400, `${field === "profilePic" ? "Profile picture" : "Payment proof"} must be an image.`);
+      }
+    }
+
+    const uploads = parseJson(row.get("uploads"), []);
+    const current = Array.isArray(uploads) ? uploads : [];
+    const details = parseJson(row.get("details"), {});
+    const now = new Date().toISOString();
+    const removed = [];
+
+    for (const { field, file } of incoming) {
+      const storedName = `${row.get("uniqueId")}-${field}-${crypto
+        .randomBytes(4)
+        .toString("hex")}-${safeFileName(file.originalname)}`;
+      await putObject(storedName, file.buffer, file.mimetype);
+
+      const previous = current.find((item) => item.field === field && item.storedName && item.storedName !== storedName);
+      if (previous?.storedName) removed.push(previous.storedName);
+
+      const entry = { field, name: file.originalname, storedName, uploadedAt: now };
+      const index = current.findIndex((item) => item.field === field);
+      if (index >= 0) current[index] = entry;
+      else current.push(entry);
+
+      details[field] = file.originalname;
+      details[`${field}UpdatedAt`] = now;
+    }
+
+    details.updatedAt = now;
+    row.set("uploads", JSON.stringify(current));
+    row.set("details", JSON.stringify(details));
+    await row.save();
+    await Promise.allSettled(removed.map((name) => deleteObject(path.basename(name))));
+
+    res.json({ ok: true });
+  }),
+);
+
+app.delete(
+  "/api/me/uploads/:field",
+  asyncRoute(async (req, res) => {
+    const field = req.params.field;
+    if (!UPLOAD_FIELDS.has(field)) throw httpError(400, "Unsupported upload type.");
+
+    const row = await currentUser(req);
+    if (!row) {
+      return res.status(401).json({ ok: false, error: "Sign in again to remove files." });
+    }
+
+    const uploads = parseJson(row.get("uploads"), []);
+    const current = Array.isArray(uploads) ? uploads : [];
+    const target = current.find((item) => item.field === field);
+    if (!target) {
+      return res.status(404).json({ ok: false, error: "No file found for that section." });
+    }
+
+    const details = parseJson(row.get("details"), {});
+    delete details[field];
+    delete details[`${field}UpdatedAt`];
+    details.updatedAt = new Date().toISOString();
+    row.set("uploads", JSON.stringify(current.filter((item) => item.field !== field)));
+    row.set("details", JSON.stringify(details));
+    await row.save();
+    if (target.storedName) await deleteObject(path.basename(target.storedName)).catch(() => {});
     res.json({ ok: true });
   }),
 );
@@ -360,19 +552,19 @@ app.post(
 app.get(
   "/api/me",
   asyncRoute(async (req, res) => {
-    const session = currentSession(req);
-    if (!session) {
-      return res.status(401).json({ ok: false, error: "Not signed in." });
-    }
-
-    const row = await findByIdentifier(session.uniqueId);
+    const row = await currentUser(req);
     if (!row) {
-      return res.status(401).json({ ok: false, error: "Session expired." });
+      return res.status(401).json({ ok: false, error: "Sign in again to view your portal." });
     }
 
+    const details = parseJson(row.get("details"), {});
     const uploads = parseJson(row.get("uploads"), []);
+    const safeUploads = Array.isArray(uploads) ? uploads : [];
     const scores = await listScores();
     const score = scores.find((item) => item.uniqueId === row.get("uniqueId"));
+    const byField = (field) => safeUploads.find((file) => file.field === field);
+    const teamMembers = Array.isArray(details.teamMembers) ? details.teamMembers : [];
+
     res.json({
       ok: true,
       uniqueId: row.get("uniqueId"),
@@ -383,14 +575,36 @@ app.get(
         row.get("registered_for") ||
         (row.get("event") === "ctf" ? "CTF" : "Hackathon"),
       status: row.get("status"),
-      details: parseJson(row.get("details"), {}),
-      uploads: Array.isArray(uploads)
-        ? uploads.map((file) => ({
-            field: file.field,
-            name: file.name,
-            url: `/api/files/${encodeURIComponent(file.field)}`,
-          }))
-        : [],
+      verifiedAt: row.get("verifiedAt") || null,
+      createdAt: row.get("timestamp") || null,
+      details,
+      profile: {
+        captain: details.captain || row.get("captainName") || "",
+        teamName: details.teamName || row.get("teamName") || "",
+        teamSize: details.teamSize || row.get("teamSize") || "",
+        phone: details.phone || row.get("phone") || "",
+        college: details.college || "",
+        city: details.city || "",
+        experience: details.experience || "",
+        repo: details.repo || "",
+      },
+      teamMembers,
+      uploads: safeUploads.map((file) => ({
+        field: file.field,
+        name: file.name,
+        storedName: file.storedName || "",
+        ...uploadView(file.field, file.uploadedAt),
+      })),
+      profilePicUrl: byField("profilePic")
+        ? "/api/files/profilePic?inline=1"
+        : null,
+      flags: {
+        verified: row.get("status") === "verified",
+        paymentUploaded: Boolean(byField("paymentScreenshot")),
+        pptUploaded: Boolean(byField("ppt")),
+        profilePictureUploaded: Boolean(byField("profilePic")),
+        teamMemberCount: teamMembers.length,
+      },
       score: score ? Number(score.points) : null,
     });
   }),
@@ -597,13 +811,12 @@ app.delete(
 app.get(
   "/api/files/:field",
   asyncRoute(async (req, res) => {
-    const session = currentSession(req);
-    if (!session) {
+    const row = await currentUser(req);
+    if (!row || !UPLOAD_FIELDS.has(req.params.field)) {
       return res.status(401).json({ ok: false, error: "Not signed in." });
     }
 
-    const row = await findByIdentifier(session.uniqueId);
-    const uploads = parseJson(row?.get("uploads"), []);
+    const uploads = parseJson(row.get("uploads"), []);
     const file = Array.isArray(uploads)
       ? uploads.find((item) => item.field === req.params.field)
       : undefined;
@@ -618,9 +831,10 @@ app.get(
       return res.status(404).json({ ok: false, error: "File not found." });
     }
 
+    const inline = String(req.query.inline) === "1";
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+      `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
     );
     res.type(object.contentType || path.extname(file.name) || "application/octet-stream");
     res.send(object.body);
@@ -633,6 +847,9 @@ function page(title, message) {
 
 app.use((error, _req, res, _next) => {
   console.error("API error:", error.message);
+  if (error.status) {
+    return res.status(error.status).json({ ok: false, error: error.message });
+  }
   if (error instanceof multer.MulterError) {
     return res.status(400).json({ ok: false, error: "Upload failed: " + error.message });
   }

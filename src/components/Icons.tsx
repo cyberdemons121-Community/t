@@ -53,7 +53,7 @@ function RadioIcon(props: IconProps) {
   );
 }
 
-function UsersIcon(props: IconProps) {
+export function UsersIcon(props: IconProps) {
   return (
     <svg {...base} {...props}>
       <circle cx="9" cy="8" r="3.5" />

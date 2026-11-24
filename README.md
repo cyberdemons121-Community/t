@@ -36,8 +36,9 @@ The dev server prints a local URL (default `http://localhost:5173`).
 - `/hackathon.html` — CyberDemons Hackathon 2026 (PPT submissions close
   **23 December 2026**, event day **26 December 2026**).
 - `/ctf.html` — CyberDemons CTF 2026 (event day **27 December 2026**).
-- `/dashboard.html` — Participant dashboard: stored registration details,
-  credentials status, uploads, and CTF score.
+- `/dashboard.html` — Participant workspace: readiness status, profile picture,
+  editable profile and team members, uploads, PPT/repo updates, activity, and
+  CTF score.
 - `/admin.html` — Admin dashboard: users and details, new-user notifications,
   hackathon PPT submissions, and CTF scoreboard.
 
@@ -124,6 +125,24 @@ Copy `.env.example` to `.env` and fill in:
 
 Local dev: run `npm run server` and `npm run dev` in separate terminals; Vite
 proxies `/api` to port 3001.
+
+## Participant dashboard
+
+Signing in sends verified users to `/dashboard.html`. The page reads `/api/me`
+and lets participants:
+
+- Track readiness: verification, payment proof, PPT, and profile/team completion.
+- Edit captain name, team name, phone, college, city, experience, and repo via
+  `PATCH /api/me/profile`.
+- Add, edit, and remove up to 10 team members in the same profile payload; team
+  size is recalculated automatically.
+- Upload or replace a profile picture, payment proof, and PPT through
+  `POST /api/me/uploads`, or remove them with `DELETE /api/me/uploads/:field`.
+  Old objects are deleted from Neon Object Storage when replaced.
+- Download every stored file through the owner-only `/api/files/:field` route.
+
+Only verified, unblocked sessions can read or change this data. Password hashes
+stay server-side and are never returned to the browser.
 
 ## Admin dashboard
 
